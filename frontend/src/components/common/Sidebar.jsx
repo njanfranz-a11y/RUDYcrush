@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
+import BrandLogo from './BrandLogo';
 import {
-  AlertTriangle,
   LayoutDashboard,
   FileText,
   MapPin,
@@ -72,9 +72,7 @@ export default function Sidebar({ currentRoute, onNavigate, mobileOpen, onCloseM
               onClick={() => handleNav(userDashboardRoute)}
               style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}
             >
-              <div className="sidebar-brand-icon">
-                <AlertTriangle size={19} color="#ffb020" strokeWidth={2.5} />
-              </div>
+              <BrandLogo variant="mark" height={40} className="sidebar-brand-logo" />
               <div>
                 <div className="sidebar-brand-name" style={{ fontSize: '15.5px', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.2px' }}>
                   RoadWatch

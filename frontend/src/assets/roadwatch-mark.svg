@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 176 176" role="img" aria-labelledby="title desc">
+  <title id="title">RoadWatch mark</title>
+  <desc id="desc">A location marker rising from two road contours, in amber on deep navy.</desc>
+  <rect x="4" y="4" width="168" height="168" rx="38" fill="#101F3B"/>
+  <g fill="none" stroke="#FFB323" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M88 34c-16 0-29 13-29 29 0 21 29 46 29 46s29-25 29-46c0-16-13-29-29-29Z"/>
+    <path d="m49 116 39 21 39-21M49 133l39 21 39-21"/>
+  </g>
+  <circle cx="88" cy="63" r="6" fill="#FFB323"/>
+</svg>

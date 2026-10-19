@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 236" role="img" aria-labelledby="title desc">
+  <title id="title">RoadWatch logo</title>
+  <desc id="desc">RoadWatch wordmark with a location marker and road contours in navy and amber.</desc>
+  <g transform="translate(18 30)">
+    <rect x="4" y="4" width="168" height="168" rx="38" fill="#101F3B"/>
+    <g fill="none" stroke="#FFB323" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M88 34c-16 0-29 13-29 29 0 21 29 46 29 46s29-25 29-46c0-16-13-29-29-29Z"/>
+      <path d="m49 116 39 21 39-21M49 133l39 21 39-21"/>
+    </g>
+    <circle cx="88" cy="63" r="6" fill="#FFB323"/>
+  </g>
+  <text x="224" y="119" fill="#101F3B" font-family="Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Arial, sans-serif" font-size="62" font-weight="750" letter-spacing="-2.4">RoadWatch</text>
+  <text x="227" y="158" fill="#5E6D83" font-family="Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="700" letter-spacing="2.2">BULACAN · COMMUNITY SAFETY</text>
+  <path d="M227 181h58" stroke="#FFB323" stroke-width="4" stroke-linecap="round"/>
+</svg>

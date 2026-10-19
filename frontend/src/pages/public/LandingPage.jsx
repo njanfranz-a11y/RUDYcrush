@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import RoadWatchWordmark from '../../components/common/RoadWatchWordmark';
 import opsCenterImg from '../../assets/operations_center.jpg';
 
 // Helper to create custom colored SVG pin markers with radar ping for Leaflet map
@@ -309,78 +310,8 @@ export default function LandingPage({ onNavigate }) {
               color: 'var(--ink, #0f1d38)'
             }}
           >
-            <span
-              className="logo__mark"
-              style={{
-                width: '40px',
-                height: '40px',
-                minWidth: '40px',
-                minHeight: '40px',
-                borderRadius: '11px',
-                background: 'linear-gradient(145deg, #0f1d38, #1e3a6b)',
-                display: 'grid',
-                placeItems: 'center',
-                flexShrink: 0,
-                boxShadow: '0 4px 12px rgba(10, 20, 40, 0.18)'
-              }}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{
-                  width: '22px',
-                  height: '22px',
-                  minWidth: '22px',
-                  minHeight: '22px',
-                  color: '#ffb020',
-                  stroke: '#ffb020',
-                  display: 'block'
-                }}
-              >
-                <path d="M12 2 2 7l10 5 10-5-10-5Z" />
-                <path d="M2 17l10 5 10-5" />
-                <path d="M2 12l10 5 10-5" />
-              </svg>
-            </span>
-            <span
-              className="logo__txt"
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                textAlign: 'left',
-                lineHeight: 1.2
-              }}
-            >
-              <b
-                style={{
-                  fontFamily: "var(--font-display, 'Sora', sans-serif)",
-                  fontWeight: 800,
-                  fontSize: '1.12rem',
-                  letterSpacing: '-0.02em',
-                  display: 'block',
-                  color: 'var(--ink, #0f1d38)',
-                  margin: 0
-                }}
-              >
-                RoadWatch
-              </b>
-              <small
-                style={{
-                  fontFamily: "var(--font-mono, 'IBM Plex Mono', monospace)",
-                  fontSize: '0.62rem',
-                  letterSpacing: '0.13em',
-                  textTransform: 'uppercase',
-                  color: 'var(--ink-mute, #8a97ad)',
-                  margin: 0
-                }}
-              >
-                Province of Bulacan
-              </small>
-            </span>
+            {/* Horizontal RoadWatch lockup (mark + wordmark + tagline). */}
+            <RoadWatchWordmark height="clamp(44px, 4.8vw, 60px)" />
           </a>
 
           <nav className="nav-links">
@@ -880,7 +811,7 @@ export default function LandingPage({ onNavigate }) {
             <div>
               <a
                 href="#"
-                className="logo logo--light"
+                className="logo"
                 onClick={(e) => { e.preventDefault(); onNavigate('home'); }}
                 style={{
                   marginBottom: '1rem',
@@ -890,74 +821,9 @@ export default function LandingPage({ onNavigate }) {
                   textDecoration: 'none'
                 }}
               >
-                <span
-                  className="logo__mark"
-                  style={{
-                    width: '40px',
-                    height: '40px',
-                    minWidth: '40px',
-                    minHeight: '40px',
-                    borderRadius: '11px',
-                    background: 'linear-gradient(145deg, #0f1d38, #1e3a6b)',
-                    display: 'grid',
-                    placeItems: 'center',
-                    flexShrink: 0
-                  }}
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    style={{
-                      width: '22px',
-                      height: '22px',
-                      color: '#ffb020',
-                      stroke: '#ffb020',
-                      display: 'block'
-                    }}
-                  >
-                    <path d="M12 2 2 7l10 5 10-5-10-5Z" />
-                    <path d="M2 17l10 5 10-5" />
-                    <path d="M2 12l10 5 10-5" />
-                  </svg>
-                </span>
-                <span
-                  className="logo__txt"
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    textAlign: 'left',
-                    lineHeight: 1.2
-                  }}
-                >
-                  <b
-                    style={{
-                      fontFamily: "var(--font-display, 'Sora', sans-serif)",
-                      fontWeight: 800,
-                      fontSize: '1.12rem',
-                      color: 'var(--on-dark, #eaf0fb)',
-                      display: 'block',
-                      margin: 0
-                    }}
-                  >
-                    RoadWatch
-                  </b>
-                  <small
-                    style={{
-                      fontFamily: "var(--font-mono, 'IBM Plex Mono', monospace)",
-                      fontSize: '0.62rem',
-                      letterSpacing: '0.13em',
-                      textTransform: 'uppercase',
-                      color: 'var(--on-dark-soft, #9db0cf)',
-                      margin: 0
-                    }}
-                  >
-                    Province of Bulacan
-                  </small>
-                </span>
+                {/* Light variant of the horizontal RoadWatch lockup so it
+                    stays legible against the dark footer. */}
+                <RoadWatchWordmark light height="clamp(40px, 4vw, 48px)" />
               </a>
               <p>A civic incident reporting platform operated with the Provincial Government of Bulacan.</p>
             </div>
