@@ -49,6 +49,10 @@ export default function Sidebar({ currentRoute, onNavigate, mobileOpen, onCloseM
     ? 'officer-reports'
     : 'my-reports';
 
+  // Verification Queue belongs to the Admin module only. Traffic Officers
+  // receive already-verified cases and investigate them from Reports.
+  const userVerificationRoute = 'admin-verification';
+
   return (
     <>
       {/* Mobile Drawer Overlay */}
@@ -125,10 +129,10 @@ export default function Sidebar({ currentRoute, onNavigate, mobileOpen, onCloseM
               <MapPin size={17} /> Live Map
             </button>
 
-            {(isAdmin || isOfficer) && (
+            {isAdmin && (
               <button
-                className={`sidebar-nav-item ${currentRoute === 'admin-reports' ? 'active' : ''}`}
-                onClick={() => handleNav(isAdmin ? 'admin-reports' : 'officer-dashboard')}
+                className={`sidebar-nav-item ${currentRoute === userVerificationRoute ? 'active' : ''}`}
+                onClick={() => handleNav(userVerificationRoute)}
               >
                 <FileCheck2 size={17} /> Verification Queue
               </button>

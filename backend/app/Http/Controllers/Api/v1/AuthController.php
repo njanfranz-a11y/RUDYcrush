@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api\v1;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\User;
+use App\Rules\PhilippineMobile;
+use Illuminate\Validation\Rule;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -18,14 +20,19 @@ class AuthController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
-            'phone' => ['nullable', 'string', 'max:30'],
+            'phone' => ['nullable', 'string', new PhilippineMobile],
+            'address' => ['required', 'string', 'min:5', 'max:255'],
             'password' => ['required', 'confirmed', Password::min(8)->letters()->numbers()],
+        ], [
+            'address.required' => 'Please enter your address.',
+            'address.min' => 'Please enter a more complete address.',
         ]);
 
         $user = User::create([
             'name' => $validated['name'],
             'email' => strtolower($validated['email']),
             'phone' => $validated['phone'] ?? null,
+            'address' => $validated['address'],
             'role' => 'reporter', // Strict public default
             'is_active' => true,
             'password' => Hash::make($validated['password']),
@@ -61,9 +68,13 @@ class AuthController extends Controller
         }
 
         if (!$user->is_active) {
+            // Clear any stale tokens so the block holds even if one was issued
+            // before the account was deactivated.
+            $user->tokens()->delete();
+
             return response()->json([
                 'success' => false,
-                'message' => 'Your account has been deactivated. Please contact an administrator.',
+                'message' => 'Your account is inactive. Please contact the administrator for assistance.',
             ], 403);
         }
 
@@ -117,7 +128,8 @@ class AuthController extends Controller
 
         $validated = $request->validate([
             'name' => ['sometimes', 'required', 'string', 'max:255'],
-            'phone' => ['nullable', 'string', 'max:30'],
+            'phone' => ['nullable', 'string', new PhilippineMobile],
+            'address' => ['sometimes', 'nullable', 'string', 'min:5', 'max:255'],
             'current_password' => ['required_with:new_password', 'nullable', 'string'],
             'new_password' => ['nullable', 'confirmed', Password::min(8)->letters()->numbers()],
         ]);
@@ -136,6 +148,9 @@ class AuthController extends Controller
         }
         if (array_key_exists('phone', $validated)) {
             $user->phone = $validated['phone'];
+        }
+        if (array_key_exists('address', $validated)) {
+            $user->address = $validated['address'];
         }
 
         $user->save();

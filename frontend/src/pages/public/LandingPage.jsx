@@ -652,7 +652,7 @@ export default function LandingPage({ onNavigate }) {
             <p>From potholes to flooding, every category routes to the municipal office that owns it.</p>
           </div>
           <div className="itiles">
-            <article className="itile" onClick={() => onNavigate('report-incident')} style={{ cursor: 'pointer' }}>
+            <article className="itile">
               <div className="itile__top">
                 <span className="iico">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -665,7 +665,7 @@ export default function LandingPage({ onNavigate }) {
               <p>Craters, sinkholes and broken pavement on national and provincial routes.</p>
             </article>
 
-            <article className="itile" onClick={() => onNavigate('report-incident')} style={{ cursor: 'pointer' }}>
+            <article className="itile">
               <div className="itile__top">
                 <span className="iico">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -678,7 +678,7 @@ export default function LandingPage({ onNavigate }) {
               <p>Blocked culverts, street flooding and waterway obstructions during monsoon.</p>
             </article>
 
-            <article className="itile" onClick={() => onNavigate('report-incident')} style={{ cursor: 'pointer' }}>
+            <article className="itile">
               <div className="itile__top">
                 <span className="iico">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -691,7 +691,7 @@ export default function LandingPage({ onNavigate }) {
               <p>Fallen trees, stalled vehicles and illegal barriers blocking lanes.</p>
             </article>
 
-            <article className="itile" onClick={() => onNavigate('report-incident')} style={{ cursor: 'pointer' }}>
+            <article className="itile">
               <div className="itile__top">
                 <span className="iico">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -704,7 +704,7 @@ export default function LandingPage({ onNavigate }) {
               <p>Dark stretches on major roads &mdash; linked directly to the power utility.</p>
             </article>
 
-            <article className="itile" onClick={() => onNavigate('report-incident')} style={{ cursor: 'pointer' }}>
+            <article className="itile">
               <div className="itile__top">
                 <span className="iico">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -718,7 +718,7 @@ export default function LandingPage({ onNavigate }) {
               <p>Missing, damaged or faded signs at intersections and school zones.</p>
             </article>
 
-            <article className="itile" onClick={() => onNavigate('report-incident')} style={{ cursor: 'pointer' }}>
+            <article className="itile">
               <div className="itile__top">
                 <span className="iico">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

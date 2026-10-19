@@ -91,6 +91,9 @@ apiClient.interceptors.response.use(
       message = error.message;
     }
     error.friendlyMessage = message;
+    // Laravel 422 field errors: { email: ['...'], phone: ['...'] }
+    // Exposed so forms can render messages next to the offending input.
+    error.fieldErrors = error.response?.status === 422 ? error.response.data?.errors ?? null : null;
     return Promise.reject(error);
   }
 );
@@ -126,15 +129,19 @@ export const api = {
   admin: {
     getStats: () => apiClient.get('/admin/dashboard/stats'),
     getReports: (params) => apiClient.get('/admin/reports', { params }),
+    getVerificationQueue: (params) => apiClient.get('/admin/verification-queue', { params }),
     verifyReport: (id, payload) => apiClient.put(`/admin/reports/${id}/verify`, payload),
     rejectReport: (id, payload) => apiClient.put(`/admin/reports/${id}/reject`, payload),
     assignOfficer: (id, payload) => apiClient.put(`/admin/reports/${id}/assign`, payload),
     requestInfo: (id, payload) => apiClient.put(`/admin/reports/${id}/request-info`, payload),
-    closeReport: (id, payload) => apiClient.put(`/admin/reports/${id}/close`, payload),
     deleteReport: (id) => apiClient.delete(`/admin/reports/${id}`),
 
     getUsers: (params) => apiClient.get('/admin/users', { params }),
+    getUser: (id) => apiClient.get(`/admin/users/${id}`),
+    createOfficer: (payload) => apiClient.post('/admin/users/officers', payload),
+    updateUser: (id, payload) => apiClient.put(`/admin/users/${id}`, payload),
     updateUserRole: (id, payload) => apiClient.put(`/admin/users/${id}/role`, payload),
+    updateUserStatus: (id, payload) => apiClient.put(`/admin/users/${id}/status`, payload),
     getOfficers: () => apiClient.get('/admin/officers'),
 
     getCategories: () => apiClient.get('/admin/categories'),
@@ -143,8 +150,11 @@ export const api = {
     deleteCategory: (id) => apiClient.delete(`/admin/categories/${id}`),
 
     getAuditLogs: (params) => apiClient.get('/admin/audit-logs', { params }),
-    getCsvExportUrl: () => `${API_BASE_URL}/admin/exports/csv`,
-    getPdfExportUrl: () => `${API_BASE_URL}/admin/exports/pdf`,
+
+    // Exports must be fetched through the authenticated axios client: a bare
+    // window.open() does not carry the bearer token and would return 401.
+    downloadCsv: (params) => apiClient.get('/admin/exports/csv', { params, responseType: 'blob' }),
+    downloadPdf: (params) => apiClient.get('/admin/exports/pdf', { params, responseType: 'blob' }),
   },
 
   // Officer

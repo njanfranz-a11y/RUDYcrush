@@ -25,6 +25,24 @@ class AuditLog extends Model
         'changes_payload' => 'array',
     ];
 
+    /**
+     * Columns the audit trail API may expose. The IP address and user agent
+     * stay in the database for forensics but are no longer serialized, since
+     * the audit trail screen does not display them.
+     */
+    protected $visible = [
+        'id',
+        'user_id',
+        'user',
+        'action',
+        'target_type',
+        'target_id',
+        'description',
+        'changes_payload',
+        'created_at',
+        'updated_at',
+    ];
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');

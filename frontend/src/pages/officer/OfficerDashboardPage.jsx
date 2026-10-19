@@ -8,7 +8,8 @@ import {
   AlertCircle,
   MapPin,
   X,
-  Send
+  Send,
+  FileText
 } from 'lucide-react';
 
 export default function OfficerDashboardPage({ onSelectReport, onNavigate }) {
@@ -135,12 +136,18 @@ export default function OfficerDashboardPage({ onSelectReport, onNavigate }) {
           </p>
         </div>
 
-        <div className="actions" style={{ display: 'flex', gap: '8px' }}>
+        <div className="actions" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button
             className="btn btn--ghost btn--sm"
             onClick={() => onNavigate('map')}
           >
             <MapPin size={14} style={{ marginRight: 6, color: 'var(--red)' }} /> View incident map
+          </button>
+          <button
+            className="btn btn--dark btn--sm"
+            onClick={() => onNavigate('officer-reports')}
+          >
+            <FileText size={14} style={{ marginRight: 6 }} /> Manage all reports
           </button>
         </div>
       </div>
@@ -185,12 +192,20 @@ export default function OfficerDashboardPage({ onSelectReport, onNavigate }) {
 
       {/* Reference Assigned Reports Table (.card.officer-cases) */}
       <div className="card officer-cases" style={{ padding: 0, overflow: 'hidden' }}>
-        <div className="card__head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
+        <div className="card__head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', borderBottom: '1px solid var(--border)' }}>
           <div>
             <h3>Assigned cases</h3>
             <p>Incidents assigned to you for roadside investigation and clearance</p>
           </div>
-          <span className="status-pill st-progress">{reports.length} cases</span>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span className="status-pill st-progress">{reports.length} cases</span>
+            <button
+              className="officer-update"
+              onClick={() => onNavigate('officer-reports')}
+            >
+              View all reports
+            </button>
+          </div>
         </div>
 
         {reports.length === 0 ? (
@@ -289,7 +304,6 @@ export default function OfficerDashboardPage({ onSelectReport, onNavigate }) {
                   style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)' }}
                 >
                   <option value="in_progress">Investigation In Progress</option>
-                  <option value="verified">Verified by Officer</option>
                   <option value="closed">Closed &amp; Road Cleared</option>
                 </select>
               </div>

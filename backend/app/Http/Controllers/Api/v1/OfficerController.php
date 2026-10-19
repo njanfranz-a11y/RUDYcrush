@@ -76,15 +76,18 @@ class OfficerController extends Controller
     public function updateStatus(Request $request, int $id): JsonResponse
     {
         $officer = $request->user();
+
+        // Officers may only act on cases the Admin has assigned to them.
+        // Verification and assignment are Admin-only responsibilities, so an
+        // officer must never reach an unassigned intake report here.
         $report = AccidentReport::where('id', $id)
-            ->where(function ($q) use ($officer) {
-                $q->where('assigned_officer_id', $officer->id)
-                  ->orWhereNull('assigned_officer_id');
-            })
+            ->where('assigned_officer_id', $officer->id)
             ->firstOrFail();
 
+        // Officers investigate and resolve. They cannot verify or reject:
+        // 'verified' is deliberately not an accepted target status.
         $validated = $request->validate([
-            'status' => ['required', 'in:verified,in_progress,closed'],
+            'status' => ['required', 'in:in_progress,closed'],
             'official_remarks' => ['nullable', 'string', 'max:1000'],
             'investigation_findings' => ['required_if:status,closed', 'nullable', 'string', 'max:2000'],
             'actions_taken' => ['required_if:status,closed', 'nullable', 'string', 'max:2000'],
@@ -101,10 +104,6 @@ class OfficerController extends Controller
             $oldStatus = $report->status;
             $newStatus = $validated['status'];
 
-            if (empty($report->assigned_officer_id)) {
-                $report->assigned_officer_id = $officer->id;
-            }
-
             $report->status = $newStatus;
             if (!empty($validated['official_remarks'])) {
                 $report->official_remarks = $validated['official_remarks'];
@@ -114,10 +113,6 @@ class OfficerController extends Controller
             }
             if (!empty($validated['actions_taken'])) {
                 $report->actions_taken = $validated['actions_taken'];
-            }
-            if ($newStatus === 'verified') {
-                $report->verified_by = $officer->id;
-                $report->verified_at = now();
             }
             if ($newStatus === 'closed') {
                 $report->closed_at = now();
@@ -148,9 +143,6 @@ class OfficerController extends Controller
                 if ($newStatus === 'closed') {
                     $title = "Case Resolved & Closed: {$report->report_number}";
                     $msg = "Investigation concluded: " . ($validated['actions_taken'] ?? $validated['investigation_findings'] ?? 'Report officially resolved and road cleared.');
-                } elseif ($newStatus === 'verified') {
-                    $title = "Report Verified: {$report->report_number}";
-                    $msg = "Officer {$officer->name} has verified your incident report." . (!empty($validated['official_remarks']) ? ' Remarks: ' . $validated['official_remarks'] : '');
                 } else {
                     $title = "Investigation Underway: {$report->report_number}";
                     $msg = "Officer {$officer->name} has started field investigation." . (!empty($validated['official_remarks']) ? ' Remarks: ' . $validated['official_remarks'] : '');

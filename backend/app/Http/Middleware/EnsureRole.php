@@ -25,13 +25,6 @@ class EnsureRole
             ], 401);
         }
 
-        if (!$user->is_active) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Your account has been deactivated.',
-            ], 403);
-        }
-
         if (!empty($roles) && !in_array($user->role, $roles, true)) {
             return response()->json([
                 'success' => false,

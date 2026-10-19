@@ -365,6 +365,49 @@ a.logo:hover, .logo:hover {
   margin-top: 4px;
 }
 
+/* Password field with show/hide toggle */
+.password-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-field .form-control {
+  padding-right: 44px;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-mute, #64748b);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.password-toggle:hover {
+  background: var(--surface-2, #f1f5f9);
+  color: var(--primary, #0f172a);
+}
+
+.password-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.12);
+}
+
+/* Spinner for the address lookup button */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 /* Tables */
 .table-container {
   width: 100%;

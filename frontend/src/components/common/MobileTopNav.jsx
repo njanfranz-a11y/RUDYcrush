@@ -46,6 +46,7 @@ export default function MobileTopNav({ currentRoute = 'home', onToggleSidebar, o
     profile: 'Officer & User Profile',
     'admin-dashboard': 'Administrator Dashboard',
     'admin-reports': 'Manage Incident Reports',
+    'admin-verification': 'Verification Queue',
     'admin-users': 'Users & Role Management',
     'admin-audit-logs': 'Security Audit Trail',
     'officer-dashboard': 'Officer Command Desk',
@@ -57,7 +58,7 @@ export default function MobileTopNav({ currentRoute = 'home', onToggleSidebar, o
   const handleSearchSubmit = (e) => {
     if (e.key === 'Enter') {
       if (isAdmin) onNavigate('admin-reports');
-      else if (isOfficer) onNavigate('officer-dashboard');
+      else if (isOfficer) onNavigate('officer-reports');
       else onNavigate('map');
     }
   };

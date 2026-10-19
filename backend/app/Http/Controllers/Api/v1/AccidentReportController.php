@@ -9,6 +9,7 @@ use App\Models\AuditLog;
 use App\Models\ReportStatusHistory;
 use App\Models\SystemNotification;
 use App\Models\User;
+use App\Rules\PhilippineMobile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -21,7 +22,7 @@ class AccidentReportController extends Controller
     {
         $validated = $request->validate([
             'reporter_name' => ['required', 'string', 'max:255'],
-            'reporter_contact' => ['nullable', 'string', 'max:50'],
+            'reporter_contact' => ['nullable', 'string', new PhilippineMobile],
             'category_id' => ['nullable', 'exists:accident_categories,id'],
             'accident_date' => ['required', 'date', 'before_or_equal:today'],
             'accident_time' => ['required', 'date_format:H:i'],

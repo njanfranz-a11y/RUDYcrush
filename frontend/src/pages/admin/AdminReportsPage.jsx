@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../services/api';
+import { saveBlobResponse, readDownloadError } from '../../services/download';
+import AdminReportActionModal from '../../components/admin/AdminReportActionModal';
 import {
   FileText,
   Search,
@@ -7,11 +9,9 @@ import {
   CheckCircle2,
   XCircle,
   UserCheck,
-  AlertCircle,
   Trash2,
   Eye,
   Calendar,
-  X,
   FileDown
 } from 'lucide-react';
 
@@ -28,13 +28,13 @@ export default function AdminReportsPage({ onSelectReport }) {
   const [typeFilter, setTypeFilter] = useState('');
   const [quickFilter, setQuickFilter] = useState('all'); // 'all', 'unassigned', 'critical'
 
-  // Modals state
+  // Modal state. The sheet itself owns its form fields and API call.
   const [modalType, setModalType] = useState(null); // 'verify', 'reject', 'assign', 'request_info'
   const [selectedReport, setSelectedReport] = useState(null);
-  const [formInput, setFormInput] = useState('');
-  const [selectedOfficerId, setSelectedOfficerId] = useState('');
-  const [modalError, setModalError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+
+  // Export state so buttons can show progress and surface failures.
+  const [exporting, setExporting] = useState(null); // 'csv' | 'pdf' | null
+  const [exportError, setExportError] = useState('');
 
   const fetchReports = (page = 1) => {
     setLoading(true);
@@ -75,63 +75,38 @@ export default function AdminReportsPage({ onSelectReport }) {
   const openActionModal = (report, type) => {
     setSelectedReport(report);
     setModalType(type);
-    setFormInput('');
-    setSelectedOfficerId(officers[0]?.id || '');
-    setModalError('');
   };
 
   const closeModal = () => {
     setModalType(null);
     setSelectedReport(null);
-    setFormInput('');
-    setModalError('');
   };
 
-  const handleModalSubmit = async (e) => {
-    e.preventDefault();
-    setModalError('');
-    setSubmitting(true);
+  const handleExport = async (kind) => {
+    setExporting(kind);
+    setExportError('');
 
     try {
-      if (modalType === 'verify') {
-        await api.admin.verifyReport(selectedReport.id, { official_remarks: formInput });
-      } else if (modalType === 'reject') {
-        if (!formInput.trim()) {
-          setModalError('A rejection reason is strictly required.');
-          setSubmitting(false);
-          return;
-        }
-        await api.admin.rejectReport(selectedReport.id, { rejection_reason: formInput });
-      } else if (modalType === 'assign') {
-        if (!selectedOfficerId) {
-          setModalError('Please select an active traffic officer.');
-          setSubmitting(false);
-          return;
-        }
-        await api.admin.assignOfficer(selectedReport.id, {
-          officer_id: selectedOfficerId,
-          assignment_notes: formInput
-        });
-      } else if (modalType === 'request_info') {
-        if (!formInput.trim()) {
-          setModalError('Please state what additional details are needed from the reporter.');
-          setSubmitting(false);
-          return;
-        }
-        await api.admin.requestInfo(selectedReport.id, { notes: formInput });
-      } else if (modalType === 'close') {
-        await api.admin.closeReport(selectedReport.id, {
-          official_remarks: formInput,
-          actions_taken: formInput || 'Incident resolved and case closed by administrator.'
-        });
-      }
+      // Send the active filters so the file matches the on-screen list.
+      const params = {
+        status: statusFilter || undefined,
+        search: search || undefined,
+        severity: severityFilter || undefined,
+        accident_type: typeFilter || undefined,
+      };
 
-      closeModal();
-      fetchReports(pagination?.current_page || 1);
+      const response = kind === 'csv'
+        ? await api.admin.downloadCsv(params)
+        : await api.admin.downloadPdf(params);
+
+      await saveBlobResponse(
+        response,
+        kind === 'csv' ? 'accident_reports.csv' : 'accident_reports.pdf'
+      );
     } catch (err) {
-      setModalError(err.friendlyMessage || err.message || 'Operation failed.');
+      setExportError(await readDownloadError(err));
     } finally {
-      setSubmitting(false);
+      setExporting(null);
     }
   };
 
@@ -278,23 +253,45 @@ export default function AdminReportsPage({ onSelectReport }) {
             type="button"
             className="btn btn--ghost btn--sm"
             id="btnExport2"
-            onClick={() => window.open(api.admin.getCsvExportUrl(), '_blank')}
+            onClick={() => handleExport('csv')}
+            disabled={exporting !== null}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
             </svg>
-            Export CSV
+            {exporting === 'csv' ? 'Exporting…' : 'Export CSV'}
           </button>
           <button
             type="button"
             className="btn btn--ghost btn--sm"
-            onClick={() => window.open(api.admin.getPdfExportUrl(), '_blank')}
+            onClick={() => handleExport('pdf')}
+            disabled={exporting !== null}
           >
             <FileText size={15} />
-            Export PDF
+            {exporting === 'pdf' ? 'Generating…' : 'Export PDF'}
           </button>
         </div>
       </div>
+
+      {exportError && (
+        <div
+          role="alert"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            margin: '0 0 14px',
+            padding: '10px 14px',
+            borderRadius: '8px',
+            background: '#fee2e2',
+            color: '#991b1b',
+            fontSize: '0.85rem',
+          }}
+        >
+          <XCircle size={16} />
+          <span>{exportError}</span>
+        </div>
+      )}
 
       {/* FILTERS & SEARCH ROW */}
       <div className="filters">
@@ -489,19 +486,6 @@ export default function AdminReportsPage({ onSelectReport }) {
                           </button>
                         )}
 
-                        {/* Resolve / Close button */}
-                        {['verified', 'assigned', 'in_progress'].includes(report.status) && (
-                          <button
-                            type="button"
-                            title="Resolve and close report"
-                            className="case-verify-btn"
-                            style={{ background: '#dcfce7', color: '#166534', borderColor: '#bbf7d0' }}
-                            onClick={() => openActionModal(report, 'close')}
-                          >
-                            Resolve
-                          </button>
-                        )}
-
                         {/* Reject button */}
                         {['submitted', 'under_review', 'additional_info_required'].includes(report.status) && (
                           <button
@@ -543,148 +527,13 @@ export default function AdminReportsPage({ onSelectReport }) {
 
       {/* ACTION MODAL (VERIFY / REJECT / ASSIGN / REQUEST INFO) */}
       {modalType && selectedReport && (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-            <div className="sheet__head">
-              <div>
-                <h3>
-                  {modalType === 'verify' && `Verify Report ${selectedReport.report_number || selectedReport.id}`}
-                  {modalType === 'close' && `Resolve & Close Report ${selectedReport.report_number || selectedReport.id}`}
-                  {modalType === 'reject' && `Reject Report ${selectedReport.report_number || selectedReport.id}`}
-                  {modalType === 'assign' && `Assign Officer to ${selectedReport.report_number || selectedReport.id}`}
-                  {modalType === 'request_info' && `Request Additional Information`}
-                </h3>
-                <p style={{ color: 'var(--ink-mute)', fontSize: '0.82rem', margin: '3px 0 0' }}>
-                  {selectedReport.location_address || 'Bulacan incident verification'}
-                </p>
-              </div>
-              <button type="button" className="modal-close" onClick={closeModal} aria-label="Close">
-                <X size={16} />
-              </button>
-            </div>
-
-            {modalError && (
-              <div style={{
-                margin: '16px 24px 0',
-                padding: '10px 14px',
-                background: '#fee2e2',
-                border: '1px solid #fecaca',
-                borderRadius: '8px',
-                color: '#dc2626',
-                fontSize: '13px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}>
-                <AlertCircle size={16} /> <div>{modalError}</div>
-              </div>
-            )}
-
-            <form onSubmit={handleModalSubmit}>
-              <div className="sheet__body">
-                {modalType === 'verify' && (
-                  <div className="field">
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 650, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-soft)', marginBottom: '6px' }}>
-                      Official Remarks / Command Center Verification
-                    </label>
-                    <textarea
-                      rows="3"
-                      className="form-control"
-                      style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--border)', borderRadius: '8px', fontSize: '13.5px', fontFamily: 'inherit' }}
-                      placeholder="e.g. Incident verified via Bulacan Command Center CCTV feed. No immediate road blockage."
-                      value={formInput}
-                      onChange={(e) => setFormInput(e.target.value)}
-                    />
-                  </div>
-                )}
-
-                {modalType === 'close' && (
-                  <div className="field">
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 650, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-soft)', marginBottom: '6px' }}>
-                      Resolution Summary &amp; Official Actions Taken
-                    </label>
-                    <textarea
-                      rows="3"
-                      className="form-control"
-                      style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--border)', borderRadius: '8px', fontSize: '13.5px', fontFamily: 'inherit' }}
-                      placeholder="e.g. Investigation completed, road cleared, citations issued, report resolved."
-                      value={formInput}
-                      onChange={(e) => setFormInput(e.target.value)}
-                    />
-                  </div>
-                )}
-
-                {modalType === 'reject' && (
-                  <div className="field">
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 650, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-soft)', marginBottom: '6px' }}>
-                      Reason for Rejection <span style={{ color: 'var(--red)' }}>*</span>
-                    </label>
-                    <textarea
-                      rows="3"
-                      className="form-control"
-                      style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--border)', borderRadius: '8px', fontSize: '13.5px', fontFamily: 'inherit' }}
-                      placeholder="State reason (e.g. Duplicate submission, test entry, coordinates outside Bulacan jurisdiction)..."
-                      value={formInput}
-                      onChange={(e) => setFormInput(e.target.value)}
-                      required
-                    />
-                    <div style={{ color: 'var(--ink-mute)', fontSize: '11.5px', marginTop: '6px' }}>
-                      This rejection explanation will be attached to the public tracking status.
-                    </div>
-                  </div>
-                )}
-
-                {modalType === 'assign' && (
-                  <>
-                    <div className="field" style={{ marginBottom: '16px' }}>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 650, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-soft)', marginBottom: '6px' }}>
-                        Select Active Traffic Officer <span style={{ color: 'var(--red)' }}>*</span>
-                      </label>
-                      <select
-                        style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--border)', borderRadius: '8px', fontSize: '13.5px', background: '#fff' }}
-                        value={selectedOfficerId}
-                        onChange={(e) => setSelectedOfficerId(e.target.value)}
-                        required
-                      >
-                        {officers.map((off) => (
-                          <option key={off.id} value={off.id}>
-                            {off.name} ({off.badge_number || 'No Badge'}) &bull; Active Cases: {off.active_assignments_count || 0}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="field">
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 650, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-soft)', marginBottom: '6px' }}>
-                        Special Assignment Dispatch Notes
-                      </label>
-                      <textarea
-                        rows="2"
-                        style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--border)', borderRadius: '8px', fontSize: '13.5px', fontFamily: 'inherit' }}
-                        placeholder="e.g. Inspect vehicle skid marks and coordinate with Bulacan Rescue."
-                        value={formInput}
-                        onChange={(e) => setFormInput(e.target.value)}
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
-
-              <div className="sheet__foot">
-                <button type="button" className="btn btn--ghost btn--sm" onClick={closeModal}>
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className={`btn btn--sm ${modalType === 'reject' ? 'btn--danger' : 'btn--dark'}`}
-                  disabled={submitting}
-                >
-                  {submitting ? 'Processing...' : 'Confirm Action'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <AdminReportActionModal
+          report={selectedReport}
+          action={modalType}
+          officers={officers}
+          onClose={closeModal}
+          onDone={() => fetchReports(pagination?.current_page || 1)}
+        />
       )}
     </section>
   );

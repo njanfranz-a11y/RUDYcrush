@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../services/api';
+import { saveBlobResponse, readDownloadError } from '../../services/download';
 import {
   Clock,
   Check,
@@ -14,6 +15,8 @@ import {
 export default function AdminDashboardPage({ onNavigate, onSelectReport }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(null); // 'csv' | 'pdf' | null
+  const [exportError, setExportError] = useState('');
 
   useEffect(() => {
     const fetchStats = () => {
@@ -32,12 +35,22 @@ export default function AdminDashboardPage({ onNavigate, onSelectReport }) {
     return () => clearInterval(timer);
   }, []);
 
-  const handleExportCsv = () => {
-    window.open(api.admin.getCsvExportUrl(), '_blank');
-  };
-
-  const handleExportPdf = () => {
-    window.open(api.admin.getPdfExportUrl(), '_blank');
+  const handleExport = async (kind) => {
+    setExporting(kind);
+    setExportError('');
+    try {
+      const response = kind === 'csv'
+        ? await api.admin.downloadCsv()
+        : await api.admin.downloadPdf();
+      await saveBlobResponse(
+        response,
+        kind === 'csv' ? 'accident_reports.csv' : 'accident_reports.pdf'
+      );
+    } catch (err) {
+      setExportError(await readDownloadError(err));
+    } finally {
+      setExporting(null);
+    }
   };
 
   const counts = stats?.counts || {};
@@ -81,17 +94,33 @@ export default function AdminDashboardPage({ onNavigate, onSelectReport }) {
 
         {/* Action Toolbar */}
         <div className="actions" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          <button className="btn btn--ghost btn--sm" onClick={handleExportCsv}>
-            <FileDown size={14} style={{ marginRight: 6 }} /> Export CSV
+          <button className="btn btn--ghost btn--sm" onClick={() => handleExport('csv')} disabled={exporting !== null}>
+            <FileDown size={14} style={{ marginRight: 6 }} /> {exporting === 'csv' ? 'Exporting…' : 'Export CSV'}
           </button>
-          <button className="btn btn--ghost btn--sm" onClick={handleExportPdf}>
-            <FileText size={14} style={{ marginRight: 6 }} /> Generate PDF report
+          <button className="btn btn--ghost btn--sm" onClick={() => handleExport('pdf')} disabled={exporting !== null}>
+            <FileText size={14} style={{ marginRight: 6 }} /> {exporting === 'pdf' ? 'Generating…' : 'Generate PDF report'}
           </button>
           <button className="btn btn--dark btn--sm" onClick={() => onNavigate('admin-reports')}>
             Review reports
           </button>
         </div>
       </div>
+
+      {exportError && (
+        <div
+          role="alert"
+          style={{
+            margin: '0 0 20px',
+            padding: '10px 14px',
+            borderRadius: '8px',
+            background: '#fee2e2',
+            color: '#991b1b',
+            fontSize: '0.85rem',
+          }}
+        >
+          {exportError}
+        </div>
+      )}
 
       {/* 6-Column KPI Metrics Row with Top Accent Borders */}
       <div className="kpi-row-grid" style={{ marginBottom: '24px' }}>

@@ -1,6 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
+import { reverseGeocode } from '../../services/geocoding';
+import PhoneInput from '../../components/common/PhoneInput';
+import { isValidPhoneNumber, PHONE_ERROR_MESSAGE, normalizePhoneDigits } from '../../services/phone';
 import LeafletMapPicker from '../../components/map/LeafletMapPicker';
 import {
   AlertTriangle,
@@ -13,7 +16,10 @@ import {
   Clock,
   Car,
   AlertCircle,
-  ArrowRight
+  ArrowRight,
+  Loader2,
+  Search,
+  Pencil
 } from 'lucide-react';
 
 export default function AccidentReportingPage({ onNavigate }) {
@@ -22,7 +28,7 @@ export default function AccidentReportingPage({ onNavigate }) {
   const [categories, setCategories] = useState([]);
   const [formData, setFormData] = useState({
     reporter_name: user?.name || '',
-    reporter_contact: user?.phone || '',
+    reporter_contact: normalizePhoneDigits(user?.phone || ''),
     category_id: '',
     accident_date: new Date().toISOString().split('T')[0],
     accident_time: new Date().toTimeString().slice(0, 5),
@@ -38,8 +44,18 @@ export default function AccidentReportingPage({ onNavigate }) {
   const [photoFiles, setPhotoFiles] = useState([]);
   const [photoPreviews, setPhotoPreviews] = useState([]);
   const [error, setError] = useState('');
+  const [contactError, setContactError] = useState('');
   const [loading, setLoading] = useState(false);
   const [submittedReport, setSubmittedReport] = useState(null);
+
+  // Reverse geocoding state
+  const [addressLookupStatus, setAddressLookupStatus] = useState('');
+  // True once the reporter has typed in the address field. While set, automatic
+  // lookups must not clobber their wording; cleared when a new location is picked.
+  const addressEditedManuallyRef = useRef(false);
+  // Identifies the newest lookup so a slow earlier response cannot overwrite
+  // the result of a more recent one.
+  const lookupTokenRef = useRef(0);
 
   useEffect(() => {
     // Fetch categories
@@ -63,6 +79,11 @@ export default function AccidentReportingPage({ onNavigate }) {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
 
+    // Clear the contact number error as soon as the reporter edits it.
+    if (name === 'reporter_contact') {
+      setContactError('');
+    }
+
     // If category changed, sync default accident_type
     if (name === 'category_id') {
       const selected = categories.find(c => c.id.toString() === value);
@@ -78,6 +99,51 @@ export default function AccidentReportingPage({ onNavigate }) {
       latitude: Number(lat).toFixed(6),
       longitude: Number(lng).toFixed(6),
     }));
+
+    // A new pin is an explicit request to regenerate the address, so it is
+    // allowed to replace whatever the reporter typed previously.
+    addressEditedManuallyRef.current = false;
+    lookupAddress(lat, lng, { isManualRequest: false });
+  };
+
+  const lookupAddress = async (lat, lng, { isManualRequest = false } = {}) => {
+    const token = ++lookupTokenRef.current;
+
+    setAddressLookupStatus('Looking up address...');
+
+    try {
+      const address = await reverseGeocode(lat, lng);
+
+      // A newer lookup already started; discard this stale response.
+      if (token !== lookupTokenRef.current) return;
+
+      if (!address) {
+        setAddressLookupStatus(
+          'No address found for this point. Please enter the location manually.'
+        );
+        return;
+      }
+
+      setFormData(prev => ({ ...prev, location_address: address }));
+      setAddressLookupStatus(
+        isManualRequest ? 'Address refreshed from map location.' : 'Address filled in from map location.'
+      );
+    } catch {
+      if (token !== lookupTokenRef.current) return;
+      setAddressLookupStatus(
+        'Could not reach the address service. Please enter the location manually.'
+      );
+    }
+  };
+
+  const handleAddressChange = (e) => {
+    const { value } = e.target;
+    addressEditedManuallyRef.current = true;
+    setFormData(prev => ({ ...prev, location_address: value }));
+  };
+
+  const handleRefreshAddress = () => {
+    lookupAddress(formData.latitude, formData.longitude, { isManualRequest: true });
   };
 
   const handleFileChange = (e) => {
@@ -123,10 +189,16 @@ export default function AccidentReportingPage({ onNavigate }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setContactError('');
 
     // Pre-flight validation
     if (!formData.location_address.trim()) {
       setError('Accident location description is required.');
+      return;
+    }
+
+    if (formData.reporter_contact && !isValidPhoneNumber(formData.reporter_contact)) {
+      setContactError(PHONE_ERROR_MESSAGE);
       return;
     }
 
@@ -226,6 +298,9 @@ export default function AccidentReportingPage({ onNavigate }) {
                 setPhotoFiles([]);
                 setPhotoPreviews([]);
                 setFormData(prev => ({ ...prev, description: '', location_address: '' }));
+                setAddressLookupStatus('');
+                addressEditedManuallyRef.current = false;
+                lookupTokenRef.current = 0;
               }}
             >
               Submit Another Report
@@ -275,14 +350,15 @@ export default function AccidentReportingPage({ onNavigate }) {
 
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">Contact / Mobile Phone</label>
-                <input
+                <PhoneInput
                   type="tel"
                   name="reporter_contact"
                   className="form-control"
-                  placeholder="e.g. +63 917 123 4567"
+                  placeholder="09171234567"
                   value={formData.reporter_contact}
                   onChange={handleChange}
                 />
+                {contactError && <span className="form-error">{contactError}</span>}
               </div>
             </div>
           </div>
@@ -376,17 +452,65 @@ export default function AccidentReportingPage({ onNavigate }) {
             <p className="card-subtitle">Click anywhere on the map or use your device GPS to drop a precise pin on the collision spot.</p>
 
             <div className="form-group">
-              <label className="form-label">Street Address & Landmark <span className="required">*</span></label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                <label className="form-label" style={{ marginBottom: 0 }} htmlFor="location-address">
+                  Street Address & Landmark <span className="required">*</span>
+                </label>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={handleRefreshAddress}
+                  disabled={addressLookupStatus === 'Looking up address...'}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '5px 10px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    background: '#ffffff',
+                    color: 'var(--text-main)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '7px',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    marginBottom: '6px',
+                  }}
+                  title="Look up the address for the current map pin"
+                >
+                  {addressLookupStatus === 'Looking up address...'
+                    ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
+                    : <Search size={13} />}
+                  Refresh Address
+                </button>
+              </div>
               <input
+                id="location-address"
                 type="text"
                 name="location_address"
                 className="form-control"
                 placeholder="e.g. MacArthur Highway corner Capitolio, Barangay Guinhawa, Malolos City"
                 value={formData.location_address}
-                onChange={handleChange}
+                onChange={handleAddressChange}
+                style={{ marginTop: '6px' }}
                 required
               />
-              <div className="form-hint">Include road name, barangay, municipality, and nearby prominent landmarks.</div>
+              {addressLookupStatus && addressLookupStatus !== 'Looking up address...' ? (
+                <div
+                  className="form-hint"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    color: addressLookupStatus.includes('manually') ? 'var(--info, #0284c7)' : 'var(--text-muted)',
+                  }}
+                >
+                  <Pencil size={11} />
+                  {addressLookupStatus} You can edit this at any time.
+                </div>
+              ) : (
+                <div className="form-hint">Include road name, barangay, municipality, and nearby prominent landmarks.</div>
+              )}
             </div>
 
             <div style={{ marginBottom: '16px' }}>

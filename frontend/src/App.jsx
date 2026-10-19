@@ -3,6 +3,11 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Sidebar from './components/common/Sidebar';
 import MobileTopNav from './components/common/MobileTopNav';
 import AppFooter from './components/common/AppFooter';
+import {
+  REPORT_DETAILS_ROUTE,
+  captureReturnRoute,
+  resolveReportReturnRoute,
+} from './navigation/reportReturnRoute';
 
 // Pages
 import LandingPage from './pages/public/LandingPage';
@@ -19,16 +24,22 @@ import UserDashboardPage from './pages/public/UserDashboardPage';
 
 import AdminDashboardPage from './pages/admin/AdminDashboardPage';
 import AdminReportsPage from './pages/admin/AdminReportsPage';
+import AdminVerificationQueuePage from './pages/admin/AdminVerificationQueuePage';
 import AdminUsersPage from './pages/admin/AdminUsersPage';
 import AdminAuditLogsPage from './pages/admin/AdminAuditLogsPage';
 
 import OfficerDashboardPage from './pages/officer/OfficerDashboardPage';
+import OfficerReportsPage from './pages/officer/OfficerReportsPage';
 
 function AppContent() {
   const { user, loading, isAdmin, isOfficer } = useAuth();
   const [currentRoute, setCurrentRoute] = useState('home');
   const [selectedReportId, setSelectedReportId] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Remembers exactly which list screen the user drilled into a report from,
+  // so the details Back button returns them to that same page (Reports vs
+  // Verification Queue vs dashboard, for any role) instead of a hardcoded one.
+  const [reportReturnRoute, setReportReturnRoute] = useState(null);
 
   const navigateTo = (route, param = null) => {
     setCurrentRoute(route);
@@ -39,7 +50,9 @@ function AppContent() {
 
   const handleSelectReport = (reportId) => {
     setSelectedReportId(reportId);
-    setCurrentRoute('report-details');
+    // Capture the originating screen before switching to the details view.
+    setReportReturnRoute((previous) => captureReturnRoute(currentRoute, previous));
+    setCurrentRoute(REPORT_DETAILS_ROUTE);
     setMobileOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -81,15 +94,13 @@ function AppContent() {
       case 'my-reports':
         return <MyReportsPage onNavigate={navigateTo} onSelectReport={handleSelectReport} />;
 
-      case 'report-details':
+      case REPORT_DETAILS_ROUTE:
         return (
           <ReportDetailsPage
             reportId={selectedReportId}
-            onBack={() => {
-              if (isAdmin) navigateTo('admin-reports');
-              else if (isOfficer) navigateTo('officer-dashboard');
-              else navigateTo('my-reports');
-            }}
+            onBack={() =>
+              navigateTo(resolveReportReturnRoute(reportReturnRoute, isAdmin, isOfficer))
+            }
           />
         );
 
@@ -110,6 +121,13 @@ function AppContent() {
       case 'admin-reports':
         return isAdmin ? (
           <AdminReportsPage onSelectReport={handleSelectReport} />
+        ) : (
+          <LandingPage onNavigate={navigateTo} />
+        );
+
+      case 'admin-verification':
+        return isAdmin ? (
+          <AdminVerificationQueuePage onSelectReport={handleSelectReport} onNavigate={navigateTo} />
         ) : (
           <LandingPage onNavigate={navigateTo} />
         );
@@ -142,9 +160,15 @@ function AppContent() {
 
       // Officer Routes
       case 'officer-dashboard':
-      case 'officer-reports':
         return isOfficer ? (
           <OfficerDashboardPage onSelectReport={handleSelectReport} onNavigate={navigateTo} />
+        ) : (
+          <LandingPage onNavigate={navigateTo} />
+        );
+
+      case 'officer-reports':
+        return isOfficer ? (
+          <OfficerReportsPage onSelectReport={handleSelectReport} onNavigate={navigateTo} />
         ) : (
           <LandingPage onNavigate={navigateTo} />
         );

@@ -1,17 +1,25 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
-import { User, Lock, CheckCircle2, AlertCircle, Shield } from 'lucide-react';
+import { User, Lock, CheckCircle2, AlertCircle, Shield, Eye, EyeOff } from 'lucide-react';
+import PhoneInput from '../../components/common/PhoneInput';
+import { isValidPhoneNumber, PHONE_ERROR_MESSAGE, normalizePhoneDigits } from '../../services/phone';
 
 export default function UserProfilePage() {
   const { user, updateCurrentUser } = useAuth();
 
   const [name, setName] = useState(user?.name || '');
-  const [phone, setPhone] = useState(user?.phone || '');
+  const [phone, setPhone] = useState(normalizePhoneDigits(user?.phone || ''));
+  const [address, setAddress] = useState(user?.address || '');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newPasswordConfirmation, setNewPasswordConfirmation] = useState('');
 
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showNewPasswordConfirmation, setShowNewPasswordConfirmation] = useState(false);
+
+  const [phoneError, setPhoneError] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [saving, setSaving] = useState(false);
@@ -20,6 +28,12 @@ export default function UserProfilePage() {
     e.preventDefault();
     setError('');
     setSuccess('');
+    setPhoneError('');
+
+    if (phone && !isValidPhoneNumber(phone)) {
+      setPhoneError(PHONE_ERROR_MESSAGE);
+      return;
+    }
 
     if (newPassword && newPassword !== newPasswordConfirmation) {
       setError('New passwords do not match.');
@@ -32,6 +46,7 @@ export default function UserProfilePage() {
       const payload = {
         name,
         phone,
+        address,
       };
 
       if (newPassword) {
@@ -126,12 +141,27 @@ export default function UserProfilePage() {
 
           <div className="form-group">
             <label className="form-label">Contact Phone Number</label>
-            <input
-              type="tel"
+            <PhoneInput
+              name="phone"
               className="form-control"
-              placeholder="+63 917 123 4567"
+              placeholder="09171234567"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => {
+                setPhone(e.target.value);
+                if (phoneError) setPhoneError('');
+              }}
+            />
+            {phoneError && <span className="form-error">{phoneError}</span>}
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Address</label>
+            <input
+              type="text"
+              className="form-control"
+              placeholder="e.g. 123 Rizal St, Brgy. Catmon, Malolos, Bulacan"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
             />
           </div>
 
@@ -141,35 +171,68 @@ export default function UserProfilePage() {
 
           <div className="form-group">
             <label className="form-label">Current Password</label>
-            <input
-              type="password"
-              className="form-control"
-              placeholder="Enter current password to verify"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-            />
+            <div className="password-field">
+              <input
+                type={showCurrentPassword ? 'text' : 'password'}
+                className="form-control"
+                placeholder="Enter current password to verify"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowCurrentPassword(prev => !prev)}
+                aria-label={showCurrentPassword ? 'Hide current password' : 'Show current password'}
+                title={showCurrentPassword ? 'Hide current password' : 'Show current password'}
+              >
+                {showCurrentPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
+            </div>
           </div>
 
           <div className="form-group">
             <label className="form-label">New Password</label>
-            <input
-              type="password"
-              className="form-control"
-              placeholder="Leave blank to keep unchanged"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-            />
+            <div className="password-field">
+              <input
+                type={showNewPassword ? 'text' : 'password'}
+                className="form-control"
+                placeholder="Leave blank to keep unchanged"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowNewPassword(prev => !prev)}
+                aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
+                title={showNewPassword ? 'Hide new password' : 'Show new password'}
+              >
+                {showNewPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
+            </div>
           </div>
 
           <div className="form-group">
             <label className="form-label">Confirm New Password</label>
-            <input
-              type="password"
-              className="form-control"
-              placeholder="Re-enter new password"
-              value={newPasswordConfirmation}
-              onChange={(e) => setNewPasswordConfirmation(e.target.value)}
-            />
+            <div className="password-field">
+              <input
+                type={showNewPasswordConfirmation ? 'text' : 'password'}
+                className="form-control"
+                placeholder="Re-enter new password"
+                value={newPasswordConfirmation}
+                onChange={(e) => setNewPasswordConfirmation(e.target.value)}
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowNewPasswordConfirmation(prev => !prev)}
+                aria-label={showNewPasswordConfirmation ? 'Hide confirm password' : 'Show confirm password'}
+                title={showNewPasswordConfirmation ? 'Hide confirm password' : 'Show confirm password'}
+              >
+                {showNewPasswordConfirmation ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
+            </div>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>

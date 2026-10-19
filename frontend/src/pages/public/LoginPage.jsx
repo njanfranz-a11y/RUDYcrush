@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { AlertTriangle, AlertCircle, LogIn } from 'lucide-react';
+import { AlertTriangle, AlertCircle, LogIn, Eye, EyeOff } from 'lucide-react';
 
 export default function LoginPage({ onNavigate }) {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -89,15 +90,26 @@ export default function LoginPage({ onNavigate }) {
               <label className="form-label" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                 Password <span className="required">*</span>
               </label>
-              <input
-                type="password"
-                className="form-control"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-                required
-              />
+              <div className="password-field">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  className="form-control"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() => setShowPassword(prev => !prev)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                </button>
+              </div>
             </div>
 
             <button
