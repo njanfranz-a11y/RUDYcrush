@@ -36,64 +36,76 @@ The development database seeder automatically initializes realistic Bulacan inci
 
 ## 3. Installation & Local Setup Guide
 
+> **For a beginner-friendly, step-by-step XAMPP guide, see [`README.txt`](README.txt).**
+> The application is already built (`frontend/dist/`) and dependencies are included
+> (`backend/vendor/`, `frontend/node_modules/`). Node.js and Composer are **not**
+> required for normal local use.
+
 ### Prerequisites
-1. **XAMPP**: Ensure Apache and MySQL are installed at `C:\xampp`.
-2. **PHP 8.2+**: Located at `C:\xampp\php\php.exe`. Ensure `extension=zip` and `extension=pdo_mysql` are enabled in `php.ini`.
-3. **Node.js**: v20+ and npm v10+.
+1. **XAMPP**: Apache + MySQL/MariaDB installed at `C:\xampp` (PHP 8.2+).
+2. The PHP extensions enabled by the standard XAMPP build: `pdo_mysql`, `mbstring`,
+   `openssl`, `fileinfo`, `dom`, `zip`.
 
-### Step 1: Database Setup (import the provided SQL dump)
-1. Start **MySQL** (and Apache) in XAMPP (Port `3306`).
-2. Import the ready-made database via phpMyAdmin:
-   - Open `http://localhost/phpmyadmin` and click **Import**.
-   - Choose `backend/database/accident_reporting_db.sql` and click **Go**.
-   - This creates `accident_reporting_db` with the schema and sample data.
+### Step 1: Copy the project into XAMPP
+Copy the **whole project folder** into `C:\xampp\htdocs\`. This copy is named
+`RUDYcrush`, so the site runs at:
+```text
+http://localhost/RUDYcrush/
+```
+If you rename the folder (for example to `RUDY`), the URL simply follows the new name.
 
-   *(Alternative: create an empty database named `accident_reporting_db`
-   (utf8mb4 / utf8mb4_unicode_ci) and run the migrations in Step 2.)*
+### Step 2: Database Setup (import the provided SQL dump)
+1. Start **Apache** and **MySQL** in the XAMPP Control Panel.
+2. Open `http://localhost/phpmyadmin`.
+3. Click **Import**, choose `backend/database/RUDY.sql`, and click **Go**.
+4. The script creates the `accident_reporting_db` database (utf8mb4) with all tables,
+   indexes, relationships, and the initial demo accounts/reports.
 
-### Step 2: Backend Setup (Laravel API)
-1. Open a terminal in the `backend/` directory:
-   ```powershell
-   cd backend
-   ```
-2. The environment file `.env` is pre-configured for local MySQL:
-   ```ini
-   DB_CONNECTION=mysql
-   DB_HOST=127.0.0.1
-   DB_PORT=3306
-   DB_DATABASE=accident_reporting_db
-   DB_USERNAME=root
-   DB_PASSWORD=
-   FILESYSTEM_DISK=public
-   ```
-3. Run migrations and seed sample data:
-   ```powershell
-   php artisan migrate:fresh --seed
-   ```
-4. Create public storage symlink for uploaded evidence photos:
-   ```powershell
-   php artisan storage:link
-   ```
-5. Start the Laravel backend API server:
-   ```powershell
-   php artisan serve --port=8000
-   ```
-   *The API will be available at `http://localhost:8000/api/v1`.*
+The connection in `backend/.env` is already configured for XAMPP:
+```ini
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=accident_reporting_db
+DB_USERNAME=root
+DB_PASSWORD=
+FILESYSTEM_DISK=public
+```
 
-### Step 3: Frontend Setup (React + Vite)
-1. In a separate terminal, navigate to `frontend/`:
-   ```powershell
-   cd frontend
-   npm install
-   ```
-2. Start the Vite development server:
-   ```powershell
-   npm run dev -- --port 5173
-   ```
-3. Open your browser and navigate to:
-   ```text
-   http://localhost:5173
-   ```
+### Step 3: Run the application
+Open:
+```text
+http://localhost/RUDYcrush/
+```
+The root `index.php` forwards to the compiled React application, and the API is served
+directly from `backend/public/api/v1` through Apache. Log in with any account from
+Section 2.
+
+### Optional: Development mode (React source edits)
+Requires Node.js 20+; only needed if you change files in `frontend/src/`.
+```powershell
+# Terminal 1 - Laravel API on port 8000
+cd backend
+C:\xampp\php\php.exe artisan serve --port=8000
+
+# Terminal 2 - Vite dev server on port 5173
+cd frontend
+npm install
+npm run dev
+```
+Then open `http://localhost:5173`. Rebuild the static app after edits:
+```powershell
+cd frontend
+npm run build
+```
+
+### Optional: Rebuilding the database from migrations
+The SQL dump is the recommended setup. For development only, you can recreate the
+schema with migrations instead:
+```powershell
+cd backend
+C:\xampp\php\php.exe artisan migrate:fresh --seed
+```
 
 ---
 
@@ -105,7 +117,7 @@ The backend contains automated PHPUnit feature tests verifying authentication, r
 cd backend
 php vendor/bin/phpunit
 ```
-**Results**: `10 tests, 32 assertions (100% Passing)`.
+**Results**: `100 tests, 435 assertions (100% passing)` on this copy.
 
 ---
 

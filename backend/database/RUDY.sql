@@ -243,12 +243,12 @@ CREATE TABLE `migrations` (
   `migration` varchar(255) NOT NULL,
   `batch` int(11) NOT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=12 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=14 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 LOCK TABLES `migrations` WRITE;
 /*!40000 ALTER TABLE `migrations` DISABLE KEYS */;
-INSERT INTO `migrations` VALUES (1,'0001_01_01_000000_create_users_table',1),(2,'0001_01_01_000001_create_cache_table',1),(3,'0001_01_01_000002_create_jobs_table',1),(4,'2026_10_17_000001_create_accident_categories_table',1),(5,'2026_10_17_000002_create_accident_reports_table',1),(6,'2026_10_17_000003_create_accident_photos_table',1),(7,'2026_10_17_000004_create_report_status_history_table',1),(8,'2026_10_17_000005_create_officer_assignments_table',1),(9,'2026_10_17_000006_create_audit_logs_table',1),(10,'2026_10_17_000007_create_system_notifications_table',1),(11,'2026_10_17_021201_create_personal_access_tokens_table',1);
+INSERT INTO `migrations` VALUES (1,'0001_01_01_000000_create_users_table',1),(2,'0001_01_01_000001_create_cache_table',1),(3,'0001_01_01_000002_create_jobs_table',1),(4,'2026_10_17_000001_create_accident_categories_table',1),(5,'2026_10_17_000002_create_accident_reports_table',1),(6,'2026_10_17_000003_create_accident_photos_table',1),(7,'2026_10_17_000004_create_report_status_history_table',1),(8,'2026_10_17_000005_create_officer_assignments_table',1),(9,'2026_10_17_000006_create_audit_logs_table',1),(10,'2026_10_17_000007_create_system_notifications_table',1),(11,'2026_10_17_021201_create_personal_access_tokens_table',1),(12,'2026_10_19_000001_add_city_municipality_to_users_table',2),(13,'2026_10_19_000002_rename_city_municipality_to_address_on_users_table',3);
 /*!40000 ALTER TABLE `migrations` ENABLE KEYS */;
 UNLOCK TABLES;
 DROP TABLE IF EXISTS `officer_assignments`;
@@ -396,6 +396,7 @@ CREATE TABLE `users` (
   `name` varchar(255) NOT NULL,
   `email` varchar(255) NOT NULL,
   `phone` varchar(255) DEFAULT NULL,
+  `address` varchar(255) DEFAULT NULL,
   `role` enum('admin','officer','reporter') NOT NULL DEFAULT 'reporter',
   `badge_number` varchar(255) DEFAULT NULL,
   `is_active` tinyint(1) NOT NULL DEFAULT 1,
@@ -412,7 +413,7 @@ CREATE TABLE `users` (
 
 LOCK TABLES `users` WRITE;
 /*!40000 ALTER TABLE `users` DISABLE KEYS */;
-INSERT INTO `users` VALUES (1,'Chief Admin Bautista','admin@roadwatch.gov','+63 917 111 2233','admin',NULL,1,NULL,'$2y$12$cXsg2QG4qjL0NYEcBEnGMutw43mtPfNW815qWYEiPgs3pkBX/tDui',NULL,'2026-10-18 03:45:36','2026-10-18 03:45:36'),(2,'Officer Marco Santos','officer.santos@traffic.gov','+63 920 333 4455','officer','PO3-8821',1,NULL,'$2y$12$lLDdTjQNmpKwmhUAVs/5TuMcmAWYu9cbUQ8tNPpgeIBktLs8UILtu',NULL,'2026-10-18 03:45:36','2026-10-18 03:45:36'),(3,'Officer Elena Reyes','officer.reyes@traffic.gov','+63 922 555 6677','officer','PO2-4912',1,NULL,'$2y$12$zqs9socvVJXFYPPsmONQmuBXDtBm0oDNCG51wy0jmQa6xfsUA22nq',NULL,'2026-10-18 03:45:36','2026-10-18 03:45:36'),(4,'Maria Dela Cruz','maria.delacruz@gmail.com','+63 918 777 8899','reporter',NULL,1,NULL,'$2y$12$CaBtiprAnNPK72GxITn2de/0CfNhZHlsD2352E15iGalujQfPACkO',NULL,'2026-10-18 03:45:37','2026-10-18 03:45:37'),(5,'Juan Luna','juan.luna@gmail.com','+63 929 112 3344','reporter',NULL,1,NULL,'$2y$12$AF.08.pRVm46I5xJdkBcA.xHOrqVZueBQIQqmFG/Q4lc5sWjMCF/.',NULL,'2026-10-18 03:45:37','2026-10-18 03:45:37');
+INSERT INTO `users` (`id`,`name`,`email`,`phone`,`role`,`badge_number`,`is_active`,`email_verified_at`,`password`,`remember_token`,`created_at`,`updated_at`) VALUES (1,'Chief Admin Bautista','admin@roadwatch.gov','+63 917 111 2233','admin',NULL,1,NULL,'$2y$12$cXsg2QG4qjL0NYEcBEnGMutw43mtPfNW815qWYEiPgs3pkBX/tDui',NULL,'2026-10-18 03:45:36','2026-10-18 03:45:36'),(2,'Officer Marco Santos','officer.santos@traffic.gov','+63 920 333 4455','officer','PO3-8821',1,NULL,'$2y$12$lLDdTjQNmpKwmhUAVs/5TuMcmAWYu9cbUQ8tNPpgeIBktLs8UILtu',NULL,'2026-10-18 03:45:36','2026-10-18 03:45:36'),(3,'Officer Elena Reyes','officer.reyes@traffic.gov','+63 922 555 6677','officer','PO2-4912',1,NULL,'$2y$12$zqs9socvVJXFYPPsmONQmuBXDtBm0oDNCG51wy0jmQa6xfsUA22nq',NULL,'2026-10-18 03:45:36','2026-10-18 03:45:36'),(4,'Maria Dela Cruz','maria.delacruz@gmail.com','+63 918 777 8899','reporter',NULL,1,NULL,'$2y$12$CaBtiprAnNPK72GxITn2de/0CfNhZHlsD2352E15iGalujQfPACkO',NULL,'2026-10-18 03:45:37','2026-10-18 03:45:37'),(5,'Juan Luna','juan.luna@gmail.com','+63 929 112 3344','reporter',NULL,1,NULL,'$2y$12$AF.08.pRVm46I5xJdkBcA.xHOrqVZueBQIQqmFG/Q4lc5sWjMCF/.',NULL,'2026-10-18 03:45:37','2026-10-18 03:45:37');
 /*!40000 ALTER TABLE `users` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;

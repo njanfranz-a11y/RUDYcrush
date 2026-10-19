@@ -1,10 +1,10 @@
 # RoadWatch Bulacan — Running This System
 
-This system runs on **MySQL (XAMPP)**. The database is provided as an importable
-SQL file:
+This system runs on **MySQL/MariaDB (XAMPP)** and was tested with PHP 8.2.12
+and MariaDB 10.4 on Windows. The database is provided as an importable SQL file:
 
 ```
-backend/database/accident_reporting_db.sql
+backend/database/RUDY.sql
 ```
 
 Import it into phpMyAdmin once, and the app is ready to use.
@@ -16,11 +16,12 @@ Import it into phpMyAdmin once, and the app is ready to use.
 3. Import the database:
    - Open `http://localhost/phpmyadmin` in a browser.
    - Click **Import** at the top.
-   - Choose the file `backend/database/accident_reporting_db.sql`.
+   - Choose the file `backend/database/RUDY.sql`.
    - Click **Go**.
    - This creates the `accident_reporting_db` database and loads the sample data
      (5 accounts, 7 reports, 8 categories).
-4. Double-click **`START-HERE.bat`** (or open `http://localhost/<folder-name>/`).
+4. Double-click **`START-HERE.bat`** (or open `http://localhost/RUDYcrush/`).
+   If you renamed the project folder, use that name in the URL instead.
 
 Log in with any seeded account (see `README.md`), e.g.
 `admin@roadwatch.gov` / `AdminPass123!`.
@@ -69,7 +70,7 @@ C:\xampp\php\php.exe artisan migrate:fresh --seed
 Then re-export the SQL file if needed:
 
 ```powershell
-C:\xampp\mysql\bin\mysqldump.exe -u root --databases accident_reporting_db --result-file="database\accident_reporting_db.sql"
+C:\xampp\mysql\bin\mysqldump.exe -u root --databases accident_reporting_db --result-file="database\RUDY.sql"
 ```
 
 ## Running automated tests (optional, dev only)
@@ -109,5 +110,5 @@ npm run build
 - **Blank page / 404 at the URL:** Apache is not running, or the folder is not
   under `C:\xampp\htdocs\`. `START-HERE.bat` prints a warning if misplaced.
 - **API errors ("Unknown database"):** MySQL is not running, or the
-  `accident_reporting_db.sql` file was not imported yet.
+  `backend/database/RUDY.sql` file was not imported yet.
 - **Photos not showing:** make sure `backend/storage` is writable.

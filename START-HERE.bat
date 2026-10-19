@@ -14,7 +14,7 @@ echo Before opening the app, make sure:
 echo   1. Apache and MySQL are STARTED in the XAMPP Control Panel.
 echo   2. The database was imported once via phpMyAdmin:
 echo        http://localhost/phpmyadmin  -^>  Import
-echo        file: backend\database\accident_reporting_db.sql
+echo        file: backend\database\RUDY.sql
 echo.
 echo Opening: %URL%
 echo.
