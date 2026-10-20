@@ -9,4 +9,5 @@ storage/framework/cache/data/*
 storage/framework/sessions/*
 storage/framework/views/*
 storage/app/public/*
+storage/app/.app_key
 .phpunit.result.cache

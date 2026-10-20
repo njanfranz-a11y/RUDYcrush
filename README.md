@@ -159,8 +159,10 @@ Reports follow a strict state-machine enforced at the database and middleware le
 ## 6. Cloud Deployment
 
 See [`DEPLOY.md`](DEPLOY.md) for the Cloudflare Pages (frontend) + Railway
-(Laravel + MySQL) setup. Deployment files live in `backend/` (`Dockerfile`,
-`railway.toml`, `.env.production.example`); local XAMPP use is unchanged.
+(Laravel + MySQL) setup. The backend container migrates and seeds itself on
+first boot, so a fresh Railway deploy only needs the MySQL reference and the
+Pages URL. Deployment files live in `backend/` (`Dockerfile`, `railway.toml`,
+`docker/entrypoint.sh`, `.env.production.example`); local XAMPP use is unchanged.
 
 ---
 

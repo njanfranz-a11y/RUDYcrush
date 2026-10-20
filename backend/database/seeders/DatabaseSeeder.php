@@ -11,12 +11,27 @@ use App\Models\ReportStatusHistory;
 use App\Models\SystemNotification;
 use App\Models\User;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        // Keep the first deploy atomic: if report seeding fails, the demo
+        // accounts are rolled back too and the next container start retries.
+        DB::transaction(function (): void {
+            $this->seedData();
+        });
+    }
+
+    private function seedData(): void
+    {
+        // Categories are safe to ensure on every deploy. Demo accounts and
+        // reports are only created on a brand-new database, so restarting the
+        // service never resurrects deleted accounts or resets passwords.
+        $isFreshInstall = User::count() === 0;
+
         // 1. Seed Categories
         $categories = [
             [
@@ -66,8 +81,13 @@ class DatabaseSeeder extends Seeder
             $categoryModels[] = AccidentCategory::updateOrCreate(['slug' => $cat['slug']], $cat);
         }
 
+        // Existing databases only need the categories above.
+        if (! $isFreshInstall) {
+            return;
+        }
+
         // 2. Seed Users
-        $admin = User::updateOrCreate(
+        $admin = User::firstOrCreate(
             ['email' => 'admin@roadwatch.gov'],
             [
                 'name' => 'Chief Admin Bautista',
@@ -78,7 +98,7 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        $officer1 = User::updateOrCreate(
+        $officer1 = User::firstOrCreate(
             ['email' => 'officer.santos@traffic.gov'],
             [
                 'name' => 'Officer Marco Santos',
@@ -90,7 +110,7 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        $officer2 = User::updateOrCreate(
+        $officer2 = User::firstOrCreate(
             ['email' => 'officer.reyes@traffic.gov'],
             [
                 'name' => 'Officer Elena Reyes',
@@ -102,7 +122,7 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        $reporter1 = User::updateOrCreate(
+        $reporter1 = User::firstOrCreate(
             ['email' => 'maria.delacruz@gmail.com'],
             [
                 'name' => 'Maria Dela Cruz',
@@ -113,7 +133,7 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        $reporter2 = User::updateOrCreate(
+        $reporter2 = User::firstOrCreate(
             ['email' => 'juan.luna@gmail.com'],
             [
                 'name' => 'Juan Luna',

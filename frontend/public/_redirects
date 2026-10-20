@@ -1,0 +1,3 @@
+# Cloudflare Pages SPA fallback. The app keeps its own in-memory routes, but
+# this keeps direct links and refreshes on /anything working.
+/*    /index.html   200

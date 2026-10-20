@@ -1,20 +1,39 @@
 import axios from 'axios';
 
-const trimTrailingSlash = (value) => (value || '').replace(/\/+$/, '');
+const trimTrailingSlash = (value) => (value || '').trim().replace(/\/+$/, '');
+
+// Cloudflare Pages only has the compiled frontend, so it must call the Railway
+// API. config.js and VITE_API_BASE_URL are both supported; a host-only value is
+// normalised to include /api/v1 so either form works without extra edits.
+const normalizeApiBase = (value) => {
+  const base = trimTrailingSlash(value);
+  if (!base) return '';
+  return /\/api\/v\d+$/.test(base) ? base : `${base}/api/v1`;
+};
+
+// public/config.js can override the API URL after a build, which keeps
+// Cloudflare's drag-and-drop/direct-upload flow usable without rebuilding.
+const runtimeBase = normalizeApiBase(
+  typeof window !== 'undefined' ? window.__ROADWATCH_API_BASE_URL__ : ''
+);
+
+const envBase = runtimeBase || normalizeApiBase(import.meta.env.VITE_API_BASE_URL);
 
 // Resolve the API base URL from wherever the app happens to be served.
 // This keeps a copy of the project runnable from any folder name without edits.
 const resolveApiBaseUrl = () => {
-  const envBase = import.meta.env.VITE_API_BASE_URL;
+  if (envBase) {
+    return envBase;
+  }
 
   if (typeof window === 'undefined') {
-    return trimTrailingSlash(envBase || 'http://localhost:8000/api/v1');
+    return 'http://localhost:8000/api/v1';
   }
 
   const { origin, pathname } = window.location;
   const lowerPath = pathname.toLowerCase();
 
-  // Production/Apache: app served as a static build at <project-root>/frontend/dist/
+  // XAMPP/Apache: app served as a static build at <project-root>/frontend/dist/
   const distMarker = '/frontend/dist/';
   const distIndex = lowerPath.indexOf(distMarker);
   if (distIndex !== -1) {
@@ -22,7 +41,7 @@ const resolveApiBaseUrl = () => {
     return `${origin}${projectRoot}/backend/public/api/v1`;
   }
 
-  // Apache: page served from within <project-root>/backend/public/
+  // XAMPP/Apache: page served from within <project-root>/backend/public/
   const backendMarker = '/backend/public/';
   const backendIndex = lowerPath.indexOf(backendMarker);
   if (backendIndex !== -1) {
@@ -30,8 +49,21 @@ const resolveApiBaseUrl = () => {
     return `${origin}${projectRoot}/backend/public/api/v1`;
   }
 
-  // Development fallback (Vite dev server or explicit override)
-  return trimTrailingSlash(envBase || 'http://localhost:8000/api/v1');
+  // Cloudflare Pages (or any other static host): same-origin fallback. This
+  // only works when Cloudflare proxies /api to Railway. Otherwise set
+  // VITE_API_BASE_URL during the Pages build, or edit dist/config.js.
+  if (import.meta.env.PROD) {
+    console.error(
+      '[RoadWatch] No backend URL is configured. The frontend will call ' +
+      `${origin}/api/v1 instead of the Railway backend. Set ` +
+      'VITE_API_BASE_URL in the Cloudflare Pages environment (or edit ' +
+      'config.js) and redeploy.'
+    );
+    return `${origin}/api/v1`;
+  }
+
+  // Local Vite development server.
+  return 'http://localhost:8000/api/v1';
 };
 
 export const API_BASE_URL = resolveApiBaseUrl();
