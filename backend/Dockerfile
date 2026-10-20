@@ -84,4 +84,4 @@ RUN sed -i 's/\r$//' /usr/local/bin/entrypoint && chmod +x /usr/local/bin/entryp
 EXPOSE 80
 
 ENTRYPOINT ["entrypoint"]
-CMD ["sleep", "3600"]
+CMD ["apache2-foreground"]

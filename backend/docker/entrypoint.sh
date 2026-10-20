@@ -3,6 +3,11 @@
 # image is built, so both are handled here instead of in the Dockerfile.
 set -e
 
+# Some base-image layers leave both mpm_event and mpm_prefork enabled, which
+# makes Apache refuse to start. PHP's Apache module requires the prefork MPM.
+rm -f /etc/apache2/mods-enabled/mpm_event.* /etc/apache2/mods-enabled/mpm_worker.*
+a2enmod mpm_prefork >/dev/null 2>&1 || true
+
 if [ -n "$PORT" ] && [ "$PORT" != "80" ]; then
     sed -ri "s/^Listen 80$/Listen ${PORT}/" /etc/apache2/ports.conf
     sed -ri "s/<VirtualHost \*:80>/<VirtualHost *:${PORT}>/" /etc/apache2/sites-available/000-default.conf
