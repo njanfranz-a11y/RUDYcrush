@@ -1,33 +1,44 @@
 # RoadWatch Bulacan — Running This System
 
 This system runs on **MySQL/MariaDB (XAMPP)** and was tested with PHP 8.2.12
-and MariaDB 10.4 on Windows. The database is provided as an importable SQL file:
+and MariaDB 10.4 on Windows.
 
-```
-backend/database/RUDY.sql
-```
-
-Import it into phpMyAdmin once, and the app is ready to use.
-
-## Run on any Windows + XAMPP device
+## Quick start (3 steps)
 
 1. Copy the **whole project folder** into `C:\xampp\htdocs\`.
-2. Open the **XAMPP Control Panel** and start **Apache** and **MySQL**.
-3. Import the database:
-   - Open `http://localhost/phpmyadmin` in a browser.
-   - Click **Import** at the top.
-   - Choose the file `backend/database/RUDY.sql`.
-   - Click **Go**.
-   - This creates the `accident_reporting_db` database and loads the sample data
-     (5 accounts, 7 reports, 8 categories).
-4. Double-click **`START-HERE.bat`** (or open `http://localhost/RUDYcrush/`).
+2. Start **Apache** and **MySQL** in the XAMPP Control Panel.
+3. Double-click **`START-HERE.bat`** (or open `http://localhost/RUDYcrush/`).
    If you renamed the project folder, use that name in the URL instead.
+
+That is the whole setup. The launcher (`index.php`) handles the rest on first load:
+
+- creates `backend/.env` with a fresh `APP_KEY` if the file is missing
+  (a git clone never includes it),
+- imports `backend/database/RUDY.sql` if the `accident_reporting_db` database
+  has no tables yet — it creates the database and the sample data
+  (5 accounts, 7 reports, 8 categories),
+- shows a plain-English checklist at `http://localhost/RUDYcrush/?setup=1`
+  instead of a blank page when Apache, MySQL or the credentials are off.
 
 Log in with any seeded account (see `README.md`), e.g.
 `admin@roadwatch.gov` / `AdminPass123!`.
 
 After this, you can register new accounts, submit reports, upload photos, and
 change statuses — everything is saved in MySQL.
+
+### Importing the SQL by hand (optional)
+
+The automatic import only runs when the database is empty, so importing first is
+still fine:
+
+- Open `http://localhost/phpmyadmin`, click **Import**, choose
+  `backend/database/RUDY.sql`, click **Go**.
+
+### Sharing the project
+
+Share the **whole folder** (ZIP or USB), not a git clone: `frontend/dist`
+(the built app) and `backend/vendor` (PHP packages) are git-ignored but required
+to run. `node_modules` does not need to be included.
 
 ## What the target device needs
 
@@ -38,8 +49,9 @@ change statuses — everything is saved in MySQL.
 
 ## How it works
 
-- `index.php` (project root) redirects to `frontend/dist/`, the built React app
-  (the build is already included).
+- `index.php` (project root) is the launcher: it self-heals `backend/.env`,
+  imports the SQL dump when needed, then redirects to `frontend/dist/`, the
+  built React app (the build is already included).
 - `frontend/src/services/api.js` auto-detects the API location from the page URL,
   so the app works from any folder name: the API is served from
   `<project-root>/backend/public/api/v1` through Apache.
@@ -107,8 +119,13 @@ npm run build
 
 ## Troubleshooting
 
-- **Blank page / 404 at the URL:** Apache is not running, or the folder is not
-  under `C:\xampp\htdocs\`. `START-HERE.bat` prints a warning if misplaced.
-- **API errors ("Unknown database"):** MySQL is not running, or the
-  `backend/database/RUDY.sql` file was not imported yet.
+- **Setup page instead of the app:** it lists exactly what failed. Reload after
+  fixing it, or open `http://localhost/RUDYcrush/?setup=1`.
+- **"Cannot reach MySQL":** MySQL is not running, or `DB_HOST`/`DB_PORT` in
+  `backend/.env` do not match your MySQL install.
+- **"Access denied" from MySQL:** your root account has a password. Put it in
+  `backend/.env` as `DB_PASSWORD=...`.
 - **Photos not showing:** make sure `backend/storage` is writable.
+- **Apache is on port 8080:** `START-HERE.bat` reads the port from
+  `C:\xampp\apache\conf\httpd.conf`, or open
+  `http://localhost:8080/RUDYcrush/` yourself.

@@ -12,6 +12,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Railway terminates HTTPS before the request reaches Apache, so trust
+        // its forwarded headers. Without this Laravel thinks the request is http.
+        $middleware->trustProxies(at: '*');
+
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureRole::class,
             'account.active' => \App\Http\Middleware\EnsureAccountActive::class,

@@ -54,11 +54,16 @@ http://localhost/RUDYcrush/
 ```
 If you rename the folder (for example to `RUDY`), the URL simply follows the new name.
 
-### Step 2: Database Setup (import the provided SQL dump)
-1. Start **Apache** and **MySQL** in the XAMPP Control Panel.
-2. Open `http://localhost/phpmyadmin`.
-3. Click **Import**, choose `backend/database/RUDY.sql`, and click **Go**.
-4. The script creates the `accident_reporting_db` database (utf8mb4) with all tables,
+### Step 2: Start Apache and MySQL
+Start **Apache** and **MySQL** in the XAMPP Control Panel. That is all the database
+setup required: on first load the launcher imports `backend/database/RUDY.sql` when
+`accident_reporting_db` has no tables.
+
+### Optional: import the SQL dump by hand
+The dump is still the source of truth, so importing it yourself works too:
+1. Open `http://localhost/phpmyadmin`.
+2. Click **Import**, choose `backend/database/RUDY.sql`, and click **Go**.
+3. The script creates the `accident_reporting_db` database (utf8mb4) with all tables,
    indexes, relationships, and the initial demo accounts/reports.
 
 The connection in `backend/.env` is already configured for XAMPP:
@@ -77,9 +82,15 @@ Open:
 ```text
 http://localhost/RUDYcrush/
 ```
-The root `index.php` forwards to the compiled React application, and the API is served
-directly from `backend/public/api/v1` through Apache. Log in with any account from
-Section 2.
+The root `index.php` is the launcher: it creates `backend/.env` if missing, imports
+the SQL dump if the database is empty, then forwards to the compiled React
+application. The API is served directly from `backend/public/api/v1` through
+Apache. Log in with any account from Section 2.
+
+If something is off, the launcher shows a checklist instead of a blank page:
+```text
+http://localhost/RUDYcrush/?setup=1
+```
 
 ### Optional: Development mode (React source edits)
 Requires Node.js 20+; only needed if you change files in `frontend/src/`.
@@ -145,6 +156,14 @@ Reports follow a strict state-machine enforced at the database and middleware le
 
 ---
 
-## 6. Mobile Application Phase (Future Milestone)
+## 6. Cloud Deployment
+
+See [`DEPLOY.md`](DEPLOY.md) for the Cloudflare Pages (frontend) + Railway
+(Laravel + MySQL) setup. Deployment files live in `backend/` (`Dockerfile`,
+`railway.toml`, `.env.production.example`); local XAMPP use is unchanged.
+
+---
+
+## 7. Mobile Application Phase (Future Milestone)
 
 The REST API endpoints (`/api/v1/auth`, `/api/v1/reports`, `/api/v1/categories`, etc.) return normalized JSON and accept Bearer tokens via Laravel Sanctum. The future Flutter mobile application will communicate with this exact same backend and database without schema modifications.

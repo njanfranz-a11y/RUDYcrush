@@ -16,6 +16,21 @@ If you rename the project folder, use the new folder name in the URL.
 Nothing else needs to change.
 
 --------------------------------------------------------------------
+QUICK START (3 steps)
+--------------------------------------------------------------------
+1. Copy the whole project folder into C:\xampp\htdocs\
+2. Start Apache and MySQL in the XAMPP Control Panel.
+3. Open http://localhost/RUDYcrush/ (or double-click START-HERE.bat).
+
+On first load the launcher (index.php) creates backend\.env when it is
+missing and imports backend\database\RUDY.sql when the database is empty.
+If something is wrong, the page shows a checklist instead of a blank page.
+Add ?setup=1 to the URL (http://localhost/RUDYcrush/?setup=1) to see it
+again at any time.
+
+The detailed steps below still work and explain every moving part.
+
+--------------------------------------------------------------------
 STEP 1 - Install XAMPP
 --------------------------------------------------------------------
 1. Download XAMPP for Windows from https://www.apachefriends.org/
@@ -44,8 +59,12 @@ STEP 3 - Copy the project into htdocs
    it (for example C:\xampp\htdocs\RUDYcrush\RUDYcrush\ is wrong).
 
 --------------------------------------------------------------------
-STEP 4 - Import the database
+STEP 4 - Import the database (optional)
 --------------------------------------------------------------------
+The launcher imports backend\database\RUDY.sql automatically the first time
+the database is empty, so this step is only needed if you prefer phpMyAdmin
+or if the automatic import could not connect to MySQL.
+
 1. Open this address in your browser:
       http://localhost/phpmyadmin
 2. Click the Import tab at the top.
@@ -95,8 +114,10 @@ Edit backend\.env only if your XAMPP MySQL setup is different:
 Do not add quotes around the password unless the password itself requires
 them. Leave APP_KEY as it is: the included .env already has a valid key.
 
-A template is also provided at backend\.env.example. If backend\.env is
-missing, copy .env.example to .env, then generate a key from a terminal:
+A template is also provided at backend\.env.example. You normally do not
+need to do anything: if backend\.env is missing, the launcher copies the
+template and generates a key automatically. To do it by hand, copy
+.env.example to .env, then run:
       C:\xampp\php\php.exe C:\xampp\htdocs\RUDYcrush\backend\artisan key:generate
 
 --------------------------------------------------------------------
@@ -136,8 +157,11 @@ TROUBLESHOOTING
    - Make sure the folder is directly inside C:\xampp\htdocs\.
 
 2. The page loads but data does not (Unknown database / connection error)
+   - Open http://localhost/RUDYcrush/?setup=1 - the checklist names the
+     exact problem (MySQL stopped, wrong password, missing database).
    - Start MySQL in the XAMPP Control Panel.
-   - Import backend\database\RUDY.sql again through phpMyAdmin.
+   - Click "Check again" - the launcher imports backend\database\RUDY.sql
+     automatically when the database is empty.
    - Confirm backend\.env contains DB_DATABASE=accident_reporting_db,
      DB_USERNAME=root, DB_PASSWORD= (or your actual password).
    - If MySQL uses another port, update DB_PORT in backend\.env.
