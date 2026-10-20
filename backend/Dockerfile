@@ -8,6 +8,7 @@ ENV APP_ENV=production \
 
 # PHP extensions required by Laravel, Sanctum, dompdf and photo uploads.
 # dom/fileinfo/xml are already compiled into the official image.
+# PHP's Apache module is not thread-safe, so keep prefork as the only MPM.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libzip-dev \
@@ -17,6 +18,9 @@ RUN apt-get update \
         unzip \
     && docker-php-ext-install -j"$(nproc)" pdo_mysql mbstring zip gd \
     && a2enmod rewrite headers \
+    && rm -f /etc/apache2/mods-enabled/mpm_event.* /etc/apache2/mods-enabled/mpm_worker.* \
+    && a2enmod mpm_prefork \
+    && apache2ctl -t \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
@@ -80,4 +84,4 @@ RUN sed -i 's/\r$//' /usr/local/bin/entrypoint && chmod +x /usr/local/bin/entryp
 EXPOSE 80
 
 ENTRYPOINT ["entrypoint"]
-CMD ["apache2-foreground"]
+CMD ["sleep", "3600"]
