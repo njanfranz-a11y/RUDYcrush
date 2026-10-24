@@ -51,6 +51,7 @@ export default function MobileTopNav({ currentRoute = 'home', onToggleSidebar, o
     'admin-audit-logs': 'Security Audit Trail',
     'officer-dashboard': 'Officer Command Desk',
     'officer-reports': 'Assigned Incident Cases',
+    'officer-verification': 'Verification Queue',
   };
 
   const pageTitle = routeTitles[currentRoute] || 'RoadWatch Bulacan';

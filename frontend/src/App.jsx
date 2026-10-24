@@ -5,8 +5,6 @@ import MobileTopNav from './components/common/MobileTopNav';
 import AppFooter from './components/common/AppFooter';
 import {
   REPORT_DETAILS_ROUTE,
-  captureReturnRoute,
-  resolveReportReturnRoute,
 } from './navigation/reportReturnRoute';
 
 // Pages
@@ -18,6 +16,7 @@ import AccidentReportingPage from './pages/public/AccidentReportingPage';
 import IncidentMapPage from './pages/public/IncidentMapPage';
 import MyReportsPage from './pages/public/MyReportsPage';
 import ReportDetailsPage from './pages/public/ReportDetailsPage';
+import ReportDetailsModal from './components/reports/ReportDetailsModal';
 import NotificationsPage from './pages/public/NotificationsPage';
 import UserProfilePage from './pages/public/UserProfilePage';
 import UserDashboardPage from './pages/public/UserDashboardPage';
@@ -30,16 +29,13 @@ import AdminAuditLogsPage from './pages/admin/AdminAuditLogsPage';
 
 import OfficerDashboardPage from './pages/officer/OfficerDashboardPage';
 import OfficerReportsPage from './pages/officer/OfficerReportsPage';
+import OfficerVerificationQueuePage from './pages/officer/OfficerVerificationQueuePage';
 
 function AppContent() {
   const { user, loading, isAdmin, isOfficer } = useAuth();
   const [currentRoute, setCurrentRoute] = useState('home');
   const [selectedReportId, setSelectedReportId] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
-  // Remembers exactly which list screen the user drilled into a report from,
-  // so the details Back button returns them to that same page (Reports vs
-  // Verification Queue vs dashboard, for any role) instead of a hardcoded one.
-  const [reportReturnRoute, setReportReturnRoute] = useState(null);
 
   const navigateTo = (route, param = null) => {
     setCurrentRoute(route);
@@ -48,14 +44,14 @@ function AppContent() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // View/Details actions open the shared modal over the current screen for
+  // every role, so filters, search, pagination and scroll stay intact.
   const handleSelectReport = (reportId) => {
     setSelectedReportId(reportId);
-    // Capture the originating screen before switching to the details view.
-    setReportReturnRoute((previous) => captureReturnRoute(currentRoute, previous));
-    setCurrentRoute(REPORT_DETAILS_ROUTE);
     setMobileOpen(false);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  const closeReportModal = () => setSelectedReportId(null);
 
   // Render current view
   const renderView = () => {
@@ -99,7 +95,7 @@ function AppContent() {
           <ReportDetailsPage
             reportId={selectedReportId}
             onBack={() =>
-              navigateTo(resolveReportReturnRoute(reportReturnRoute, isAdmin, isOfficer))
+              navigateTo(isAdmin ? 'admin-reports' : isOfficer ? 'officer-reports' : 'my-reports')
             }
           />
         );
@@ -173,6 +169,13 @@ function AppContent() {
           <LandingPage onNavigate={navigateTo} />
         );
 
+      case 'officer-verification':
+        return isOfficer ? (
+          <OfficerVerificationQueuePage onSelectReport={handleSelectReport} onNavigate={navigateTo} />
+        ) : (
+          <LandingPage onNavigate={navigateTo} />
+        );
+
       default:
         return (
           <div className="container" style={{ padding: '80px 20px', textAlign: 'center' }}>
@@ -192,6 +195,9 @@ function AppContent() {
     return (
       <div style={{ minHeight: '100vh', width: '100%', background: 'var(--paper)' }}>
         {renderView()}
+        {selectedReportId && (
+          <ReportDetailsModal reportId={selectedReportId} onClose={closeReportModal} />
+        )}
       </div>
     );
   }
@@ -215,6 +221,9 @@ function AppContent() {
           {renderView()}
         </main>
       </div>
+      {selectedReportId && (
+        <ReportDetailsModal reportId={selectedReportId} onClose={closeReportModal} />
+      )}
     </div>
   );
 }

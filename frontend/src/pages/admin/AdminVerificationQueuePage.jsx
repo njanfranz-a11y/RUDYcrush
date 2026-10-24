@@ -5,9 +5,8 @@ import {
   FileText,
   MapPin,
   Eye,
-  CheckCircle2,
-  XCircle,
   MessageSquare,
+  UserPlus,
 } from 'lucide-react';
 
 // The admin intake statuses. These are the reports that have not yet been
@@ -103,10 +102,10 @@ export default function AdminVerificationQueuePage({ onSelectReport, onNavigate 
     setSelectedReport(null);
   };
 
-  // Only these statuses can legally move to "verified" (see
-  // AccidentReport::VALID_TRANSITIONS), so the Verify action is hidden for
-  // reports waiting on the reporter.
-  const canVerify = (status) => status === 'submitted' || status === 'under_review';
+  // Only these statuses can legally receive a "request more info" action
+  // (see AccidentReport::VALID_TRANSITIONS). Assignment is available for
+  // every row in this queue, since that is the admin's job here.
+  const canRequestInfo = (status) => status === 'submitted' || status === 'under_review';
 
   const renderPagination = () => {
     if (!pagination || pagination.last_page <= 1) return null;
@@ -163,7 +162,7 @@ export default function AdminVerificationQueuePage({ onSelectReport, onNavigate 
       <div className="phead">
         <div>
           <h2 className="hd">Verification Queue</h2>
-          <p>Reports awaiting administrative verification and clearance.</p>
+          <p>Reports awaiting an administrative officer assignment.</p>
         </div>
 
         <div className="actions">
@@ -282,18 +281,7 @@ export default function AdminVerificationQueuePage({ onSelectReport, onNavigate 
                           <Eye size={12} style={{ marginRight: 4 }} /> Details
                         </button>
 
-                        {canVerify(report.status) && (
-                          <button
-                            type="button"
-                            title="Verify report"
-                            className="case-verify-btn"
-                            onClick={() => openActionModal(report, 'verify')}
-                          >
-                            <CheckCircle2 size={12} style={{ marginRight: 4 }} /> Verify
-                          </button>
-                        )}
-
-                        {canVerify(report.status) && (
+                        {canRequestInfo(report.status) && (
                           <button
                             type="button"
                             title="Request more information from the reporter"
@@ -306,11 +294,11 @@ export default function AdminVerificationQueuePage({ onSelectReport, onNavigate 
 
                         <button
                           type="button"
-                          title="Reject report"
-                          className="case-reject-btn"
-                          onClick={() => openActionModal(report, 'reject')}
+                          title={report.assigned_officer_id ? 'Reassign officer' : 'Assign officer'}
+                          className="case-verify-btn"
+                          onClick={() => openActionModal(report, 'assign')}
                         >
-                          <XCircle size={12} style={{ marginRight: 4 }} /> Reject
+                          <UserPlus size={12} style={{ marginRight: 4 }} /> Assign
                         </button>
                       </div>
                     </td>
@@ -330,7 +318,7 @@ export default function AdminVerificationQueuePage({ onSelectReport, onNavigate 
         </div>
       </div>
 
-      {/* VERIFY / REJECT / REQUEST INFO SHEET (shared with the Reports page) */}
+      {/* ASSIGN / REQUEST INFO SHEET (shared with the Reports page) */}
       {modalType && selectedReport && (
         <AdminReportActionModal
           report={selectedReport}

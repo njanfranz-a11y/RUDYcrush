@@ -125,6 +125,21 @@ export default function AdminUsersPage() {
     setViewError('');
   };
 
+  // Escape closes the account-details modal, matching the report details modal.
+  useEffect(() => {
+    if (!viewingUser) return undefined;
+
+    const onKeyDown = (event) => {
+      if (event.key !== 'Escape') return;
+      setViewingUser(null);
+      setViewDetail(null);
+      setViewError('');
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [viewingUser]);
+
   // ---- Edit account --------------------------------------------------------
   const openEditModal = (targetUser) => {
     setEditingUser(targetUser);

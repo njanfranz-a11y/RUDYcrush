@@ -139,6 +139,12 @@ export default function OfficerDashboardPage({ onSelectReport, onNavigate }) {
         <div className="actions" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button
             className="btn btn--ghost btn--sm"
+            onClick={() => onNavigate('officer-verification')}
+          >
+            <Shield size={14} style={{ marginRight: 6 }} /> Verification queue
+          </button>
+          <button
+            className="btn btn--ghost btn--sm"
             onClick={() => onNavigate('map')}
           >
             <MapPin size={14} style={{ marginRight: 6, color: 'var(--red)' }} /> View incident map
@@ -259,7 +265,16 @@ export default function OfficerDashboardPage({ onSelectReport, onNavigate }) {
                           Details
                         </button>
 
-                        {report.status !== 'closed' && (
+                        {report.status === 'assigned' && (
+                          <button
+                            className="officer-update"
+                            onClick={() => onNavigate('officer-verification')}
+                          >
+                            Verify
+                          </button>
+                        )}
+
+                        {['verified', 'in_progress'].includes(report.status) && (
                           <button
                             className="officer-update"
                             onClick={() => openStatusModal(report)}

@@ -33,6 +33,7 @@ Route::prefix('v1')->group(function () {
 
         // Reporter / Common Reports
         Route::get('/my-reports', [AccidentReportController::class, 'myReports']);
+        Route::get('/my-reports/dashboard', [AccidentReportController::class, 'myDashboard']);
         Route::get('/reports/{id}', [AccidentReportController::class, 'show']);
         Route::put('/reports/{id}/supplement', [AccidentReportController::class, 'supplement']);
 
@@ -48,11 +49,12 @@ Route::prefix('v1')->group(function () {
             Route::get('/dashboard/stats', [AdminController::class, 'dashboardStats']);
             Route::get('/reports', [AdminController::class, 'reports']);
             Route::get('/verification-queue', [AdminController::class, 'verificationQueue']);
-            Route::put('/reports/{id}/verify', [AdminController::class, 'verifyReport']);
-            Route::put('/reports/{id}/reject', [AdminController::class, 'rejectReport']);
+            // Verification and rejection belong to the assigned Traffic
+            // Officer, so the admin portal deliberately exposes assignment
+            // only. Admin verify/reject routes no longer exist.
             Route::put('/reports/{id}/assign', [AdminController::class, 'assignOfficer']);
             Route::put('/reports/{id}/request-info', [AdminController::class, 'requestInfo']);
-            Route::delete('/reports/{id}', [AdminController::class, 'softDelete']);
+            Route::delete('/reports/{id}', [AdminController::class, 'destroyReport']);
 
             // User & Officer Management
             Route::get('/users', [AdminController::class, 'users']);
@@ -81,6 +83,9 @@ Route::prefix('v1')->group(function () {
         Route::middleware('role:officer')->prefix('officer')->group(function () {
             Route::get('/dashboard/stats', [OfficerController::class, 'dashboardStats']);
             Route::get('/assigned-reports', [OfficerController::class, 'assignedReports']);
+            Route::get('/verification-queue', [OfficerController::class, 'verificationQueue']);
+            Route::put('/reports/{id}/verify', [OfficerController::class, 'verifyReport']);
+            Route::put('/reports/{id}/reject', [OfficerController::class, 'rejectReport']);
             Route::put('/reports/{id}/status', [OfficerController::class, 'updateStatus']);
         });
     });

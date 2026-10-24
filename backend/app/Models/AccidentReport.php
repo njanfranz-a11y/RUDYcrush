@@ -54,7 +54,9 @@ class AccidentReport extends Model
         'under_review' => ['additional_info_required', 'verified', 'assigned', 'rejected'],
         'additional_info_required' => ['under_review', 'submitted', 'rejected'],
         'verified' => ['assigned', 'in_progress', 'closed'],
-        'assigned' => ['in_progress', 'verified', 'closed'],
+        // The assigned officer decides whether the dispatched report is
+        // legitimate: verify it, or reject it with a recorded reason.
+        'assigned' => ['in_progress', 'verified', 'rejected', 'closed'],
         'in_progress' => ['closed', 'verified'],
         'closed' => [], // Terminal status
         'rejected' => [], // Terminal status

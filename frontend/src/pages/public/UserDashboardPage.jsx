@@ -1,26 +1,41 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import IncidentReportModal from '../../components/reports/IncidentReportModal';
 import {
   FileText,
   Clock,
   CheckCircle2,
-  AlertTriangle,
   Plus,
-  ArrowRight,
   TrendingUp,
   MapPin,
-  ExternalLink,
-  ShieldAlert,
-  Radio
+  AlertCircle,
+  RefreshCw,
+  X
 } from 'lucide-react';
+
+const CATEGORY_COLORS = [
+  '#1e3a6b',
+  '#38bdf8',
+  '#ffb020',
+  '#a78bfa',
+  '#22c55e',
+  '#fb923c',
+  '#ef4444',
+  '#14b8a6',
+];
 
 export default function UserDashboardPage({ onNavigate, onSelectReport }) {
   const { user } = useAuth();
-  const [myReports, setMyReports] = useState([]);
-  const [publicReports, setPublicReports] = useState([]);
+  const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [trendRange, setTrendRange] = useState('12');
+  const [chartLoading, setChartLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [trendRange, setTrendRange] = useState(12);
+  const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [reportNotice, setReportNotice] = useState(null);
+  const dashboardLoadedRef = useRef(false);
+  const requestIdRef = useRef(0);
 
   const firstName = user?.name ? user.name.split(' ')[0] : 'Resident';
 
@@ -31,54 +46,139 @@ export default function UserDashboardPage({ onNavigate, onSelectReport }) {
     return 'Good evening';
   };
 
-  // Refetch every time this component is navigated to (not just first mount)
-  const [mountCount, setMountCount] = useState(0);
-  useEffect(() => { setMountCount(n => n + 1); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // One endpoint feeds every card and chart, so all values use the same
+  // owner-scoped snapshot from the database.
+  const loadDashboard = useCallback(async (weeks, { background = false } = {}) => {
+    const requestId = ++requestIdRef.current;
 
-  useEffect(() => {
-    if (mountCount === 0) return;
-    setLoading(true);
-    Promise.all([
-      api.getMyReports().catch(() => ({ data: { success: false, data: { data: [] } } })),
-      api.getPublicMap().catch(() => ({ data: { success: false, data: [] } }))
-    ])
-      .then(([myRes, pubRes]) => {
-        if (myRes.data?.success) {
-          const list = myRes.data.data?.data || myRes.data.data || [];
-          setMyReports(Array.isArray(list) ? list : []);
-        }
-        if (pubRes.data?.success) {
-          const pubList = pubRes.data.data || [];
-          setPublicReports(Array.isArray(pubList) ? pubList : []);
-        }
-      })
-      .finally(() => setLoading(false));
-  }, [mountCount]);
+    if (!background) {
+      if (dashboardLoadedRef.current) {
+        setChartLoading(true);
+      } else {
+        setLoading(true);
+      }
+    }
 
-  // Auto-refresh dashboard data every 15s to stay synchronized with DB
-  useEffect(() => {
-    const timer = setInterval(() => {
-      Promise.all([
-        api.getMyReports().catch(() => ({ data: { success: false, data: { data: [] } } })),
-        api.getPublicMap().catch(() => ({ data: { success: false, data: [] } }))
-      ]).then(([myRes, pubRes]) => {
-        if (myRes.data?.success) {
-          const list = myRes.data.data?.data || myRes.data.data || [];
-          setMyReports(Array.isArray(list) ? list : []);
-        }
-        if (pubRes.data?.success) {
-          const pubList = pubRes.data.data || [];
-          setPublicReports(Array.isArray(pubList) ? pubList : []);
-        }
-      }).catch(() => {});
-    }, 15000);
-    return () => clearInterval(timer);
+    try {
+      const res = await api.getMyDashboard({ weeks });
+      if (requestId !== requestIdRef.current) return;
+
+      if (res.data?.success) {
+        setDashboard(res.data.data);
+        dashboardLoadedRef.current = true;
+        setError('');
+      } else {
+        setError('Unable to load dashboard data.');
+      }
+    } catch (err) {
+      if (requestId !== requestIdRef.current) return;
+      setError(err.friendlyMessage || err.message || 'Unable to load dashboard data.');
+    } finally {
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+        setChartLoading(false);
+      }
+    }
   }, []);
 
-  // Compute User Counts
-  const totalFiled = myReports.length;
-  const awaitingReview = myReports.filter(r => ['submitted', 'under_review', 'additional_info_required'].includes(r.status)).length;
-  const resolvedCount = myReports.filter(r => ['verified', 'assigned', 'in_progress', 'closed', 'resolved'].includes(r.status)).length;
+  const handleReportSubmitted = useCallback(({ report, duplicateCheckNote }) => {
+    setReportModalOpen(false);
+    setReportNotice({
+      reportNumber: report?.report_number || (report?.id ? `#${report.id}` : ''),
+      duplicateCheckNote: duplicateCheckNote || '',
+    });
+
+    // Refresh the KPIs, charts, category breakdown and recent reports from the
+    // same source that the newly created report was saved to.
+    loadDashboard(trendRange, { background: true });
+  }, [loadDashboard, trendRange]);
+
+  useEffect(() => {
+    if (!reportNotice) return undefined;
+    const timer = setTimeout(() => setReportNotice(null), 12000);
+    return () => clearTimeout(timer);
+  }, [reportNotice]);
+
+  useEffect(() => {
+    loadDashboard(trendRange);
+  }, [trendRange, loadDashboard]);
+
+  // Auto-refresh quietly every 15s so charts stay synchronized with the DB.
+  useEffect(() => {
+    const timer = setInterval(
+      () => loadDashboard(trendRange, { background: true }),
+      15000
+    );
+    return () => clearInterval(timer);
+  }, [trendRange, loadDashboard]);
+
+  const counts = dashboard?.counts || {};
+  const totalFiled = counts.total ?? 0;
+  const awaitingReview = counts.awaiting_review ?? 0;
+  const resolvedCount = counts.in_progress_and_resolved ?? 0;
+  const averageResolution = dashboard?.average_resolution_hours;
+  const trendBuckets = dashboard?.trend?.buckets || [];
+  const byCategory = dashboard?.by_category || [];
+  const recentReports = dashboard?.recent_reports || [];
+
+  const hasTrendData = trendBuckets.some(
+    (bucket) => Number(bucket.filed) > 0 || Number(bucket.resolved) > 0
+  );
+
+  // Donut geometry. Percentages come from the API and always add up to the
+  // Resident's own report total (subject to normal rounding).
+  const categorySegments = byCategory.reduce((segments, category, index) => {
+    const percentage = Number(category.percentage) || 0;
+    const previous = segments[segments.length - 1];
+    const dashOffset = previous
+      ? previous.dashOffset - (Number(previous.percentage) || 0)
+      : 0;
+
+    segments.push({
+      ...category,
+      color: CATEGORY_COLORS[index % CATEGORY_COLORS.length],
+      dashArray: `${percentage} ${100 - percentage}`,
+      dashOffset,
+    });
+    return segments;
+  }, []);
+
+  // Trend chart geometry, scaled to the largest weekly value.
+  const chart = {
+    left: 48,
+    right: 620,
+    top: 24,
+    bottom: 180,
+    width: 640,
+    height: 220,
+  };
+  const maxTrendValue = Math.max(
+    4,
+    ...trendBuckets.flatMap((bucket) => [Number(bucket.filed) || 0, Number(bucket.resolved) || 0])
+  );
+  const yMax = Math.ceil(maxTrendValue / 4) * 4;
+  const xFor = (index) => {
+    if (trendBuckets.length <= 1) {
+      return (chart.left + chart.right) / 2;
+    }
+    return chart.left + (index * (chart.right - chart.left)) / (trendBuckets.length - 1);
+  };
+  const yFor = (value) => (
+    chart.bottom - ((Number(value) || 0) / yMax) * (chart.bottom - chart.top)
+  );
+  const filedPoints = trendBuckets.map((bucket, index) => [xFor(index), yFor(bucket.filed)]);
+  const resolvedPoints = trendBuckets.map((bucket, index) => [xFor(index), yFor(bucket.resolved)]);
+  const toPolyline = (points) => points.map((point) => point.join(',')).join(' ');
+  const filedPolyline = toPolyline(filedPoints);
+  const resolvedPolyline = toPolyline(resolvedPoints);
+  const areaPolygon = filedPoints.length > 0
+    ? `${toPolyline(filedPoints)} ${chart.right},${chart.bottom} ${chart.left},${chart.bottom}`
+    : '';
+  const yTicks = [1, 0.75, 0.5, 0.25, 0].map((fraction) => ({
+    value: Math.round(yMax * fraction),
+    y: yFor(yMax * fraction),
+  }));
+  const xLabelEvery = Math.max(1, Math.ceil(trendBuckets.length / 6));
 
   // Status badge styling helper
   const renderStatusBadge = (status) => {
@@ -133,8 +233,10 @@ export default function UserDashboardPage({ onNavigate, onSelectReport }) {
     );
   };
 
-  // Recent list to display: user's reports first, followed by public provincial feed
-  const displayReports = myReports.length > 0 ? myReports.slice(0, 6) : publicReports.slice(0, 6);
+  // Only the signed-in resident's own submissions belong in this table.
+  // There is deliberately no public-feed fallback: another resident's report
+  // must never appear on this dashboard.
+  const displayReports = recentReports.slice(0, 6);
 
   // Live Activity Items
   const activityFeed = [
@@ -144,6 +246,34 @@ export default function UserDashboardPage({ onNavigate, onSelectReport }) {
     { dot: '#fb923c', text: 'Drainage obstruction clearance ongoing in Malolos', time: '52m ago' },
     { dot: '#22c55e', text: 'Road signage inspection closed in Bulakan', time: '1h ago' }
   ];
+
+  if (loading && !dashboard) {
+    return (
+      <div className="dashboard-container" style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--ink-mute)' }}>
+        <Clock size={30} style={{ margin: '0 auto 12px auto', display: 'block', color: '#94a3b8' }} />
+        <div>Loading your dashboard data...</div>
+      </div>
+    );
+  }
+
+  if (error && !dashboard) {
+    return (
+      <div className="dashboard-container" style={{ padding: '80px 20px', textAlign: 'center' }}>
+        <AlertCircle size={32} style={{ margin: '0 auto 12px auto', display: 'block', color: '#dc2626' }} />
+        <div style={{ fontWeight: 700, color: 'var(--ink)', marginBottom: '6px' }}>
+          Unable to load your dashboard
+        </div>
+        <p style={{ color: 'var(--ink-mute)', fontSize: '13px', margin: '0 0 16px' }}>{error}</p>
+        <button
+          type="button"
+          className="btn btn--primary btn--sm"
+          onClick={() => loadDashboard(trendRange)}
+        >
+          <RefreshCw size={14} style={{ marginRight: 6 }} /> Try again
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard-container">
@@ -169,13 +299,54 @@ export default function UserDashboardPage({ onNavigate, onSelectReport }) {
           <button
             type="button"
             className="btn btn--primary btn--sm"
-            onClick={() => onNavigate('report-incident')}
+            onClick={() => setReportModalOpen(true)}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
             <Plus size={15} strokeWidth={2.5} /> File an Incident Report
           </button>
         </div>
       </div>
+
+      {reportNotice && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '10px',
+            margin: '0 0 20px',
+            padding: '12px 14px',
+            borderRadius: '10px',
+            background: '#ecfdf5',
+            border: '1px solid #a7f3d0',
+            color: '#065f46',
+            fontSize: '13px',
+          }}
+        >
+          <CheckCircle2 size={18} style={{ flexShrink: 0, marginTop: '1px' }} />
+          <div style={{ flex: 1 }}>
+            <strong>Incident report submitted successfully.</strong>
+            {reportNotice.reportNumber ? (
+              <span> Reference: {reportNotice.reportNumber}.</span>
+            ) : null}
+            {reportNotice.duplicateCheckNote ? (
+              <div style={{ marginTop: '4px', color: '#92400e', lineHeight: 1.5 }}>
+                {reportNotice.duplicateCheckNote}
+              </div>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            className="modal-close"
+            onClick={() => setReportNotice(null)}
+            aria-label="Dismiss success notification"
+            style={{ width: '26px', height: '26px', flexShrink: 0 }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {/* 2. 4 Top Metric KPI Cards */}
       <div className="kpi-row-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', marginBottom: '24px' }}>
@@ -188,7 +359,7 @@ export default function UserDashboardPage({ onNavigate, onSelectReport }) {
             <div className="kpi-stat-val">{totalFiled}</div>
             <div className="kpi-stat-lbl">My reports filed</div>
             <div style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600, marginTop: '4px' }}>
-              &uarr; Active tracking
+              {totalFiled > 0 ? 'Active tracking' : 'No reports filed yet'}
             </div>
           </div>
         </div>
@@ -202,7 +373,7 @@ export default function UserDashboardPage({ onNavigate, onSelectReport }) {
             <div className="kpi-stat-val">{awaitingReview}</div>
             <div className="kpi-stat-lbl">Awaiting review</div>
             <div style={{ fontSize: '11px', color: '#0284c7', fontWeight: 600, marginTop: '4px' }}>
-              In review queue
+              {awaitingReview > 0 ? 'In review queue' : 'Nothing awaiting review'}
             </div>
           </div>
         </div>
@@ -216,7 +387,7 @@ export default function UserDashboardPage({ onNavigate, onSelectReport }) {
             <div className="kpi-stat-val">{resolvedCount}</div>
             <div className="kpi-stat-lbl">In progress &amp; resolved</div>
             <div style={{ fontSize: '11px', color: '#15803d', fontWeight: 600, marginTop: '4px' }}>
-              Verified updates
+              {resolvedCount > 0 ? 'Verified, working, or closed' : 'No active cases yet'}
             </div>
           </div>
         </div>
@@ -227,14 +398,49 @@ export default function UserDashboardPage({ onNavigate, onSelectReport }) {
             <TrendingUp size={18} />
           </div>
           <div>
-            <div className="kpi-stat-val">19 <span style={{ fontSize: '15px', fontWeight: 600 }}>h</span></div>
+            <div className="kpi-stat-val">
+              {averageResolution !== null && averageResolution !== undefined
+                ? <>{averageResolution} <span style={{ fontSize: '15px', fontWeight: 600 }}>h</span></>
+                : '—'}
+            </div>
             <div className="kpi-stat-lbl">Avg. resolution time</div>
             <div style={{ fontSize: '11px', color: '#7e22ce', fontWeight: 600, marginTop: '4px' }}>
-              Provincial standard
+              {averageResolution !== null && averageResolution !== undefined
+                ? 'Based on your closed reports'
+                : 'No closed reports yet'}
             </div>
           </div>
         </div>
       </div>
+
+      {error && (
+        <div
+          role="alert"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            margin: '0 0 18px',
+            padding: '10px 14px',
+            borderRadius: '8px',
+            background: '#fee2e2',
+            border: '1px solid #fecaca',
+            color: '#991b1b',
+            fontSize: '13px',
+          }}
+        >
+          <AlertCircle size={16} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1 }}>{error}</span>
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
+            onClick={() => loadDashboard(trendRange)}
+            style={{ color: '#991b1b' }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* 3. Middle Section: Reports Trend and Hazard Categories */}
       <div className="analytics-two-col" style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: '20px', marginBottom: '24px' }}>
@@ -246,82 +452,160 @@ export default function UserDashboardPage({ onNavigate, onSelectReport }) {
               <p style={{ fontSize: '12.5px', color: 'var(--ink-soft)', margin: '2px 0 0' }}>Filed vs resolved incidents over time</p>
             </div>
             <div className="chipset" style={{ display: 'flex', gap: '4px' }}>
-              {['12W', '6W', '4W'].map((range) => (
-                <button
-                  key={range}
-                  type="button"
-                  onClick={() => setTrendRange(range)}
-                  style={{
-                    padding: '4px 10px',
-                    fontSize: '11.5px',
-                    fontWeight: 700,
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-color)',
-                    background: trendRange === range ? 'var(--navy-900)' : '#ffffff',
-                    color: trendRange === range ? '#ffffff' : 'var(--ink-soft)',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {range}
-                </button>
-              ))}
+              {['12W', '6W', '4W'].map((range) => {
+                const weeks = Number(range.replace('W', ''));
+                const active = trendRange === weeks;
+
+                return (
+                  <button
+                    key={range}
+                    type="button"
+                    onClick={() => setTrendRange(weeks)}
+                    aria-pressed={active}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '11.5px',
+                      fontWeight: 700,
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color)',
+                      background: active ? 'var(--navy-900)' : '#ffffff',
+                      color: active ? '#ffffff' : 'var(--ink-soft)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {range}
+                  </button>
+                );
+              })}
             </div>
           </div>
           <div className="card__body" style={{ padding: '20px' }}>
-            <div className="chartwrap" style={{ position: 'relative' }}>
-              <svg viewBox="0 0 640 220" style={{ width: '100%', height: 'auto', display: 'block' }}>
-                <defs>
-                  <linearGradient id="filedGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#1e3a6b" stopOpacity="0.25" />
-                    <stop offset="100%" stopColor="#1e3a6b" stopOpacity="0.0" />
-                  </linearGradient>
-                </defs>
-                {/* Horizontal reference grid lines */}
-                <line x1="40" y1="30" x2="620" y2="30" stroke="#e2e8f0" strokeDasharray="3 3" />
-                <line x1="40" y1="80" x2="620" y2="80" stroke="#e2e8f0" strokeDasharray="3 3" />
-                <line x1="40" y1="130" x2="620" y2="130" stroke="#e2e8f0" strokeDasharray="3 3" />
-                <line x1="40" y1="180" x2="620" y2="180" stroke="#cbd5e1" />
+            {chartLoading ? (
+              <div style={{ minHeight: '220px', display: 'grid', placeItems: 'center', color: 'var(--ink-mute)', fontSize: '13px' }}>
+                Loading {trendRange}-week trend...
+              </div>
+            ) : !hasTrendData ? (
+              <div style={{ minHeight: '220px', display: 'grid', placeItems: 'center', textAlign: 'center', padding: '20px' }}>
+                <div>
+                  <TrendingUp size={28} color="#94a3b8" style={{ margin: '0 auto 8px auto', display: 'block' }} />
+                  <div style={{ fontWeight: 600, color: 'var(--ink)', marginBottom: '4px' }}>
+                    No reports filed in this period
+                  </div>
+                  <p style={{ color: 'var(--ink-mute)', fontSize: '12.5px', margin: 0 }}>
+                    Try a longer range or submit a new incident report.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="chartwrap" style={{ position: 'relative' }}>
+                <svg
+                  viewBox={`0 0 ${chart.width} ${chart.height}`}
+                  role="img"
+                  aria-label={`Reports filed and resolved over the last ${trendRange} weeks`}
+                  style={{ width: '100%', height: 'auto', display: 'block' }}
+                >
+                  <defs>
+                    <linearGradient id="residentFiledGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#1e3a6b" stopOpacity="0.25" />
+                      <stop offset="100%" stopColor="#1e3a6b" stopOpacity="0.0" />
+                    </linearGradient>
+                  </defs>
 
-                {/* Target Ceiling */}
-                <line x1="40" y1="65" x2="620" y2="65" stroke="#22c55e" strokeWidth="2" strokeDasharray="4 4" />
+                  {yTicks.map((tick, index) => (
+                    <g key={`y-${index}`}>
+                      <line
+                        x1={chart.left}
+                        y1={tick.y}
+                        x2={chart.right}
+                        y2={tick.y}
+                        stroke={tick.value === 0 ? '#cbd5e1' : '#e2e8f0'}
+                        strokeDasharray={tick.value === 0 ? undefined : '3 3'}
+                      />
+                      <text
+                        x={chart.left - 8}
+                        y={tick.y + 4}
+                        textAnchor="end"
+                        fontSize="10.5"
+                        fill="var(--ink-mute)"
+                      >
+                        {tick.value}
+                      </text>
+                    </g>
+                  ))}
 
-                {/* Shaded Area */}
-                <polygon points="40,140 100,125 160,110 220,115 280,95 340,90 400,75 460,70 520,60 580,50 620,45 620,180 40,180" fill="url(#filedGrad)" />
+                  {areaPolygon && (
+                    <polygon points={areaPolygon} fill="url(#residentFiledGrad)" />
+                  )}
 
-                {/* Filed Line (Navy) */}
-                <polyline
-                  points="40,140 100,125 160,110 220,115 280,95 340,90 400,75 460,70 520,60 580,50 620,45"
-                  fill="none"
-                  stroke="#16294d"
-                  strokeWidth="3"
-                />
+                  <polyline
+                    points={filedPolyline}
+                    fill="none"
+                    stroke="#16294d"
+                    strokeWidth="3"
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />
 
-                {/* Resolved Line (Amber) */}
-                <polyline
-                  points="40,150 100,142 160,130 220,132 280,110 340,105 400,95 460,88 520,80 580,72 620,68"
-                  fill="none"
-                  stroke="#ffb020"
-                  strokeWidth="3"
-                />
+                  <polyline
+                    points={resolvedPolyline}
+                    fill="none"
+                    stroke="#ffb020"
+                    strokeWidth="3"
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />
 
-                {/* Line Points */}
-                {[[40,140],[100,125],[160,110],[220,115],[280,95],[340,90],[400,75],[460,70],[520,60],[580,50],[620,45]].map(([cx, cy], i) => (
-                  <circle key={`f-${i}`} cx={cx} cy={cy} r="4" fill="#16294d" stroke="#ffffff" strokeWidth="2" />
-                ))}
-                {[[40,150],[100,142],[160,130],[220,132],[280,110],[340,105],[400,95],[460,88],[520,80],[580,72],[620,68]].map(([cx, cy], i) => (
-                  <circle key={`r-${i}`} cx={cx} cy={cy} r="4" fill="#ffb020" stroke="#ffffff" strokeWidth="2" />
-                ))}
-              </svg>
-            </div>
+                  {filedPoints.map(([cx, cy], index) => (
+                    <circle
+                      key={`f-${index}`}
+                      cx={cx}
+                      cy={cy}
+                      r="4"
+                      fill="#16294d"
+                      stroke="#ffffff"
+                      strokeWidth="2"
+                    >
+                      <title>{`${trendBuckets[index].label}: ${trendBuckets[index].filed} filed`}</title>
+                    </circle>
+                  ))}
+
+                  {resolvedPoints.map(([cx, cy], index) => (
+                    <circle
+                      key={`r-${index}`}
+                      cx={cx}
+                      cy={cy}
+                      r="4"
+                      fill="#ffb020"
+                      stroke="#ffffff"
+                      strokeWidth="2"
+                    >
+                      <title>{`${trendBuckets[index].label}: ${trendBuckets[index].resolved} resolved`}</title>
+                    </circle>
+                  ))}
+
+                  {trendBuckets.map((bucket, index) => (
+                    index % xLabelEvery === 0 ? (
+                      <text
+                        key={`x-${index}`}
+                        x={xFor(index)}
+                        y={chart.height - 8}
+                        textAnchor="middle"
+                        fontSize="10.5"
+                        fill="var(--ink-mute)"
+                      >
+                        {bucket.label}
+                      </text>
+                    ) : null
+                  ))}
+                </svg>
+              </div>
+            )}
             <div className="chart-legend" style={{ display: 'flex', gap: '18px', marginTop: '12px', fontSize: '12px', color: 'var(--ink-soft)' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#16294d' }} /> Filed Incidents
               </span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#ffb020' }} /> Resolved by Crews
-              </span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#22c55e' }} /> Target Resolution Ceiling
               </span>
             </div>
           </div>
@@ -331,66 +615,61 @@ export default function UserDashboardPage({ onNavigate, onSelectReport }) {
         <div className="card">
           <div className="card__head" style={{ padding: '18px 20px', borderBottom: '1px solid var(--border-color)' }}>
             <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--ink)' }}>By Category</h3>
-            <p style={{ fontSize: '12.5px', color: 'var(--ink-soft)', margin: '2px 0 0' }}>Distribution of active incidents</p>
+            <p style={{ fontSize: '12.5px', color: 'var(--ink-soft)', margin: '2px 0 0' }}>Distribution of your reports</p>
           </div>
           <div className="card__body" style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '18px', flexWrap: 'wrap' }}>
-              <div style={{ position: 'relative', width: '130px', height: '130px', flexShrink: 0 }}>
-                <svg viewBox="0 0 42 42" style={{ transform: 'rotate(-90deg)', width: '100%', height: '100%' }}>
-                  <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#1e3a6b" strokeWidth="6" strokeDasharray="37.5 62.5" strokeDashoffset="0" />
-                  <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#38bdf8" strokeWidth="6" strokeDasharray="16.4 83.6" strokeDashoffset="-37.5" />
-                  <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#ffb020" strokeWidth="6" strokeDasharray="12.7 87.3" strokeDashoffset="-53.9" />
-                  <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#a78bfa" strokeWidth="6" strokeDasharray="11.5 88.5" strokeDashoffset="-66.6" />
-                  <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#22c55e" strokeWidth="6" strokeDasharray="12.4 87.6" strokeDashoffset="-78.1" />
-                  <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#fb923c" strokeWidth="6" strokeDasharray="9.5 90.5" strokeDashoffset="-90.5" />
-                </svg>
-                <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', textAlign: 'center', pointerEvents: 'none' }}>
-                  <div>
-                    <b style={{ fontSize: '20px', fontWeight: 800, color: 'var(--ink)', display: 'block', lineHeight: 1 }}>1,284</b>
-                    <small style={{ fontSize: '10.5px', color: 'var(--ink-mute)', textTransform: 'uppercase', fontWeight: 600 }}>open</small>
+            {byCategory.length === 0 ? (
+              <div style={{ minHeight: '150px', display: 'grid', placeItems: 'center', textAlign: 'center' }}>
+                <div>
+                  <div style={{ fontWeight: 600, color: 'var(--ink)', marginBottom: '4px' }}>No category data yet</div>
+                  <p style={{ color: 'var(--ink-mute)', fontSize: '12.5px', margin: 0 }}>
+                    Categories will appear after you file a report.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '18px', flexWrap: 'wrap' }}>
+                <div style={{ position: 'relative', width: '130px', height: '130px', flexShrink: 0 }}>
+                  <svg viewBox="0 0 42 42" style={{ transform: 'rotate(-90deg)', width: '100%', height: '100%' }}>
+                    {categorySegments.map((segment, index) => (
+                      <circle
+                        key={`${segment.name}-${index}`}
+                        cx="21"
+                        cy="21"
+                        r="15.915"
+                        fill="transparent"
+                        stroke={segment.color}
+                        strokeWidth="6"
+                        strokeDasharray={segment.dashArray}
+                        strokeDashoffset={segment.dashOffset}
+                      >
+                        <title>{`${segment.name}: ${segment.count} (${segment.percentage}%)`}</title>
+                      </circle>
+                    ))}
+                  </svg>
+                  <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', textAlign: 'center', pointerEvents: 'none' }}>
+                    <div>
+                      <b style={{ fontSize: '20px', fontWeight: 800, color: 'var(--ink)', display: 'block', lineHeight: 1 }}>{totalFiled}</b>
+                      <small style={{ fontSize: '10.5px', color: 'var(--ink-mute)', textTransform: 'uppercase', fontWeight: 600 }}>reports</small>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', flex: 1, minWidth: '140px', fontSize: '12.5px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: '#1e3a6b' }} /> Road damage
-                  </span>
-                  <strong style={{ color: 'var(--ink-soft)' }}>37.5%</strong>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: '#38bdf8' }} /> Flooding
-                  </span>
-                  <strong style={{ color: 'var(--ink-soft)' }}>16.4%</strong>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: '#ffb020' }} /> Obstruction
-                  </span>
-                  <strong style={{ color: 'var(--ink-soft)' }}>12.7%</strong>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: '#a78bfa' }} /> Streetlight
-                  </span>
-                  <strong style={{ color: 'var(--ink-soft)' }}>11.5%</strong>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: '#22c55e' }} /> Public structure
-                  </span>
-                  <strong style={{ color: 'var(--ink-soft)' }}>12.4%</strong>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: '#fb923c' }} /> Signage
-                  </span>
-                  <strong style={{ color: 'var(--ink-soft)' }}>9.5%</strong>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', flex: 1, minWidth: '140px', fontSize: '12.5px' }}>
+                  {categorySegments.map((category, index) => (
+                    <div key={`${category.name}-${index}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                        <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: category.color, flexShrink: 0 }} />
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{category.name}</span>
+                      </span>
+                      <strong style={{ color: 'var(--ink-soft)', whiteSpace: 'nowrap' }}>
+                        {category.count} &middot; {category.percentage}%
+                      </strong>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
@@ -402,10 +681,10 @@ export default function UserDashboardPage({ onNavigate, onSelectReport }) {
           <div className="card__head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px', borderBottom: '1px solid var(--border-color)' }}>
             <div>
               <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--ink)' }}>
-                {myReports.length > 0 ? 'My Recent Incident Reports' : 'Recent Provincial Incidents'}
+                My Recent Incident Reports
               </h3>
               <p style={{ fontSize: '12.5px', color: 'var(--ink-soft)', margin: '2px 0 0' }}>
-                {myReports.length > 0 ? 'Track live verification and dispatch status' : 'Latest road safety submissions in Bulacan'}
+                Track live verification and dispatch status of your submissions
               </p>
             </div>
             <button
@@ -423,16 +702,16 @@ export default function UserDashboardPage({ onNavigate, onSelectReport }) {
             ) : displayReports.length === 0 ? (
               <div style={{ padding: '40px 20px', textAlign: 'center' }}>
                 <FileText size={32} color="#94a3b8" style={{ margin: '0 auto 8px auto', display: 'block' }} />
-                <div style={{ fontWeight: 600, color: 'var(--ink)', marginBottom: '4px' }}>No reports filed yet</div>
+                <div style={{ fontWeight: 600, color: 'var(--ink)', marginBottom: '4px' }}>You haven't submitted any incident reports yet</div>
                 <p style={{ color: 'var(--ink-mute)', fontSize: '13px', marginBottom: '14px' }}>
                   Report a pothole, flooding, or road obstruction to notify dispatch crews.
                 </p>
                 <button
                   type="button"
                   className="btn btn--primary btn--sm"
-                  onClick={() => onNavigate('report-incident')}
+                  onClick={() => setReportModalOpen(true)}
                 >
-                  File a Report Now
+                  Submit a New Report
                 </button>
               </div>
             ) : (
@@ -530,7 +809,7 @@ export default function UserDashboardPage({ onNavigate, onSelectReport }) {
               <button
                 type="button"
                 className="btn btn--ghost btn--sm"
-                onClick={() => onNavigate('report-incident')}
+                onClick={() => setReportModalOpen(true)}
                 style={{ color: 'var(--accent)', fontWeight: 700 }}
               >
                 File report &rarr;
@@ -539,6 +818,13 @@ export default function UserDashboardPage({ onNavigate, onSelectReport }) {
           </div>
         </div>
       </div>
+
+      {reportModalOpen && (
+        <IncidentReportModal
+          onClose={() => setReportModalOpen(false)}
+          onSubmitted={handleReportSubmitted}
+        />
+      )}
     </div>
   );
 }

@@ -65,6 +65,7 @@ const ACTION_META = {
   request_additional_info: { label: 'Info requested', category: 'Reports', tone: 'amber' },
   close_report: { label: 'Report closed', category: 'Reports', tone: 'green' },
   archive_report: { label: 'Report archived', category: 'Reports', tone: 'red' },
+  delete_report: { label: 'Report permanently deleted', category: 'Reports', tone: 'red' },
   create_officer: { label: 'Officer created', category: 'Users', tone: 'blue' },
   update_user_account: { label: 'Account updated', category: 'Users', tone: 'amber' },
   update_user_role: { label: 'Role updated', category: 'Users', tone: 'amber' },

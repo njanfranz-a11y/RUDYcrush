@@ -147,6 +147,7 @@ export const api = {
 
   // Citizen
   getMyReports: (params) => apiClient.get('/my-reports', { params }),
+  getMyDashboard: (params) => apiClient.get('/my-reports/dashboard', { params }),
   getReport: (id) => apiClient.get(`/reports/${id}`),
   supplementReport: (id, formData) => apiClient.put(`/reports/${id}/supplement`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
@@ -162,8 +163,6 @@ export const api = {
     getStats: () => apiClient.get('/admin/dashboard/stats'),
     getReports: (params) => apiClient.get('/admin/reports', { params }),
     getVerificationQueue: (params) => apiClient.get('/admin/verification-queue', { params }),
-    verifyReport: (id, payload) => apiClient.put(`/admin/reports/${id}/verify`, payload),
-    rejectReport: (id, payload) => apiClient.put(`/admin/reports/${id}/reject`, payload),
     assignOfficer: (id, payload) => apiClient.put(`/admin/reports/${id}/assign`, payload),
     requestInfo: (id, payload) => apiClient.put(`/admin/reports/${id}/request-info`, payload),
     deleteReport: (id) => apiClient.delete(`/admin/reports/${id}`),
@@ -193,6 +192,9 @@ export const api = {
   officer: {
     getStats: () => apiClient.get('/officer/dashboard/stats'),
     getAssignedReports: (params) => apiClient.get('/officer/assigned-reports', { params }),
+    getVerificationQueue: (params) => apiClient.get('/officer/verification-queue', { params }),
+    verifyReport: (id, payload) => apiClient.put(`/officer/reports/${id}/verify`, payload),
+    rejectReport: (id, payload) => apiClient.put(`/officer/reports/${id}/reject`, payload),
     updateStatus: (id, payload) => apiClient.put(`/officer/reports/${id}/status`, payload),
   },
 };

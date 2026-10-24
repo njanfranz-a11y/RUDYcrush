@@ -9,7 +9,7 @@ const VALID_TRANSITIONS = {
   under_review: ['additional_info_required', 'verified', 'assigned', 'rejected'],
   additional_info_required: ['under_review', 'submitted', 'rejected'],
   verified: ['assigned', 'in_progress', 'closed'],
-  assigned: ['in_progress', 'verified', 'closed'],
+  assigned: ['in_progress', 'verified', 'rejected', 'closed'],
   in_progress: ['closed', 'verified'],
   closed: [],
   rejected: [],
@@ -24,13 +24,16 @@ const STATUS_LABELS = {
   closed: 'Closed & Road Cleared',
 };
 
-// Only these targets can be set through the officer endpoint. Verification
-// and rejection are Admin-only, so officers may investigate and resolve but
-// never set a report to 'verified'.
+// Only these targets can be set through the officer investigation endpoint.
+// Verification and rejection use their own dedicated endpoints, and
+// investigation updates are only allowed once the case has been verified.
 const OFFICER_ALLOWED = ['in_progress', 'closed'];
+const INVESTIGABLE = ['verified', 'in_progress'];
 
 const allowedTargets = (currentStatus) =>
-  (VALID_TRANSITIONS[currentStatus] || []).filter((s) => OFFICER_ALLOWED.includes(s));
+  INVESTIGABLE.includes(currentStatus)
+    ? (VALID_TRANSITIONS[currentStatus] || []).filter((s) => OFFICER_ALLOWED.includes(s))
+    : [];
 
 /**
  * Shared investigation status editor for the officer Reports page. Extracted
@@ -39,9 +42,7 @@ const allowedTargets = (currentStatus) =>
  */
 export default function OfficerStatusUpdateModal({ report, onClose, onUpdated }) {
   const targets = allowedTargets(report.status);
-  const [nextStatus, setNextStatus] = useState(
-    report.status === 'assigned' ? 'in_progress' : (targets[0] || 'closed')
-  );
+  const [nextStatus, setNextStatus] = useState(targets[0] || 'closed');
   const [remarks, setRemarks] = useState(report.official_remarks || '');
   const [findings, setFindings] = useState(report.investigation_findings || '');
   const [actionsTaken, setActionsTaken] = useState(report.actions_taken || '');
@@ -113,7 +114,7 @@ export default function OfficerStatusUpdateModal({ report, onClose, onUpdated })
             </select>
             {targets.length === 0 && (
               <div className="form-hint" style={{ marginTop: '6px' }}>
-                This report is in a terminal state and cannot be updated further.
+                This report is not open for investigation updates. Verify it first, or it may already be in a terminal state.
               </div>
             )}
           </div>

@@ -3477,6 +3477,111 @@ a.logo:hover, .logo:hover {
   margin-bottom: 14px;
 }
 
+/* Resident incident-report modal */
+.rw-incident-modal {
+  width: 100%;
+  max-width: 980px;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--border, #dde3ee);
+  border-radius: var(--radius-lg, 16px);
+  box-shadow: 0 24px 60px -15px rgba(10, 20, 40, 0.35);
+  animation: sheetEntry 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.rw-incident-modal__head {
+  flex: 0 0 auto;
+}
+.rw-incident-modal__body {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 1.25rem 1.5rem 1.5rem;
+}
+.rw-incident-modal__body .form-group {
+  min-width: 0;
+}
+@media (max-width: 640px) {
+  .rw-incident-modal {
+    max-height: 94vh;
+    border-radius: 12px;
+  }
+  .rw-incident-modal__head {
+    padding: 0.9rem 1rem;
+  }
+  .rw-incident-modal__body {
+    padding: 0.9rem 0.85rem 1rem;
+  }
+  .rw-incident-modal__body .card {
+    padding: 16px;
+  }
+}
+
+/* Shared report details modal (all roles) */
+.rw-report-modal {
+  width: 100%;
+  max-width: 1080px;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--border, #dde3ee);
+  border-radius: var(--radius-lg, 16px);
+  box-shadow: 0 24px 60px -15px rgba(10, 20, 40, 0.35);
+  animation: sheetEntry 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.rw-report-modal__head {
+  flex: 0 0 auto;
+}
+.rw-report-modal__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 1.5rem 1.5rem;
+}
+.rw-report-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 1rem 0 0;
+}
+.rw-report-modal .case-detail-head {
+  margin-top: 1rem;
+}
+@media (max-width: 640px) {
+  .rw-report-modal {
+    max-height: 94vh;
+    border-radius: 12px;
+  }
+  .rw-report-modal__body {
+    padding: 0 0.85rem 1rem;
+  }
+  .rw-report-modal .case-detail-head {
+    padding: 16px;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .rw-report-modal .case-head-right {
+    align-items: flex-start;
+  }
+  .rw-report-modal .case-detail-head h2 {
+    font-size: 21px;
+  }
+  .rw-report-modal .case-detail-grid {
+    gap: 14px;
+  }
+  .rw-report-modal .detail-card {
+    padding: 16px;
+  }
+}
+
 /* ==========================================================
    REFERENCE LANDING PAGE STYLING & LOGO
    ========================================================== */

@@ -12,7 +12,8 @@ import {
   Trash2,
   Eye,
   Calendar,
-  FileDown
+  FileDown,
+  X
 } from 'lucide-react';
 
 export default function AdminReportsPage({ onSelectReport }) {
@@ -29,12 +30,19 @@ export default function AdminReportsPage({ onSelectReport }) {
   const [quickFilter, setQuickFilter] = useState('all'); // 'all', 'unassigned', 'critical'
 
   // Modal state. The sheet itself owns its form fields and API call.
-  const [modalType, setModalType] = useState(null); // 'verify', 'reject', 'assign', 'request_info'
+  const [modalType, setModalType] = useState(null); // 'assign' or 'request_info'
   const [selectedReport, setSelectedReport] = useState(null);
 
   // Export state so buttons can show progress and surface failures.
   const [exporting, setExporting] = useState(null); // 'csv' | 'pdf' | null
   const [exportError, setExportError] = useState('');
+
+  // Permanent-delete confirmation state. Nothing is sent to the API until the
+  // Admin explicitly presses "Delete Permanently".
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [notice, setNotice] = useState(null); // { type: 'success' | 'error', text }
 
   const fetchReports = (page = 1) => {
     setLoading(true);
@@ -110,16 +118,60 @@ export default function AdminReportsPage({ onSelectReport }) {
     }
   };
 
-  const handleArchive = async (id, reportNumber) => {
-    if (window.confirm(`Are you sure you want to soft-delete / archive report ${reportNumber}? It can be recovered by database administrators.`)) {
-      try {
-        await api.admin.deleteReport(id);
-        fetchReports(pagination?.current_page || 1);
-      } catch (err) {
-        alert(err.friendlyMessage || err.message || 'Failed to archive report.');
-      }
+  const openDeleteModal = (report) => {
+    setDeleteTarget(report);
+    setDeleteError('');
+    setNotice(null);
+  };
+
+  const closeDeleteModal = () => {
+    if (deleting) return;
+    setDeleteTarget(null);
+    setDeleteError('');
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget || deleting) return;
+
+    setDeleting(true);
+    setDeleteError('');
+    setNotice(null);
+
+    try {
+      const response = await api.admin.deleteReport(deleteTarget.id);
+
+      // If the deleted row was the only item on a later page, step back one
+      // page so the table does not land on an empty page.
+      const currentPage = pagination?.current_page || 1;
+      const targetPage = reports.length === 1 && currentPage > 1 ? currentPage - 1 : currentPage;
+
+      setDeleteTarget(null);
+      setNotice({
+        type: 'success',
+        text: response.data?.message || 'Incident report permanently deleted.',
+      });
+      fetchReports(targetPage);
+    } catch (err) {
+      setDeleteError(err.friendlyMessage || err.message || 'Failed to delete report.');
+    } finally {
+      setDeleting(false);
     }
   };
+
+  // Escape closes the confirmation sheet without deleting anything.
+  useEffect(() => {
+    if (!deleteTarget) return undefined;
+
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape' && !deleting) {
+        setDeleteTarget(null);
+        setDeleteError('');
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [deleteTarget, deleting]);
 
   // Status badge styling helper
   const getStatusPillClass = (st) => {
@@ -293,6 +345,26 @@ export default function AdminReportsPage({ onSelectReport }) {
         </div>
       )}
 
+      {notice && (
+        <div
+          role={notice.type === 'error' ? 'alert' : 'status'}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            margin: '0 0 14px',
+            padding: '10px 14px',
+            borderRadius: '8px',
+            background: notice.type === 'error' ? '#fee2e2' : '#dcfce7',
+            color: notice.type === 'error' ? '#991b1b' : '#166534',
+            fontSize: '0.85rem',
+          }}
+        >
+          {notice.type === 'error' ? <XCircle size={16} /> : <CheckCircle2 size={16} />}
+          <span>{notice.text}</span>
+        </div>
+      )}
+
       {/* FILTERS & SEARCH ROW */}
       <div className="filters">
         <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: '8px', flex: 1, minWidth: '240px' }}>
@@ -462,48 +534,26 @@ export default function AdminReportsPage({ onSelectReport }) {
                           View
                         </button>
 
-                        {/* Verify button for unverified items */}
-                        {['submitted', 'under_review'].includes(report.status) && (
+                        {/* Admin assigns or reassigns; verification and
+                            rejection belong to the assigned officer. */}
+                        {!['closed', 'rejected'].includes(report.status) && (
                           <button
                             type="button"
-                            title="Verify report"
-                            className="case-verify-btn"
-                            onClick={() => openActionModal(report, 'verify')}
-                          >
-                            Verify
-                          </button>
-                        )}
-
-                        {/* Assign officer button */}
-                        {['verified', 'assigned'].includes(report.status) && (
-                          <button
-                            type="button"
-                            title="Assign officer"
+                            title={report.assigned_officer ? 'Reassign officer' : 'Assign officer'}
                             className="case-assign-btn"
                             onClick={() => openActionModal(report, 'assign')}
                           >
-                            Assign
+                            {report.assigned_officer ? 'Reassign' : 'Assign'}
                           </button>
                         )}
 
-                        {/* Reject button */}
-                        {['submitted', 'under_review', 'additional_info_required'].includes(report.status) && (
-                          <button
-                            type="button"
-                            title="Reject report"
-                            className="case-reject-btn"
-                            onClick={() => openActionModal(report, 'reject')}
-                          >
-                            Reject
-                          </button>
-                        )}
-
-                        {/* Soft delete */}
+                        {/* Permanent delete (confirmation required) */}
                         <button
                           type="button"
-                          title="Archive / Soft Delete"
+                          title="Delete permanently"
+                          aria-label={`Delete report ${report.report_number || report.id}`}
                           className="case-delete-btn"
-                          onClick={() => handleArchive(report.id, report.report_number)}
+                          onClick={() => openDeleteModal(report)}
                         >
                           <Trash2 size={13} />
                         </button>
@@ -525,7 +575,7 @@ export default function AdminReportsPage({ onSelectReport }) {
         </div>
       </div>
 
-      {/* ACTION MODAL (VERIFY / REJECT / ASSIGN / REQUEST INFO) */}
+      {/* ACTION MODAL (ASSIGN / REQUEST INFO) */}
       {modalType && selectedReport && (
         <AdminReportActionModal
           report={selectedReport}
@@ -534,6 +584,116 @@ export default function AdminReportsPage({ onSelectReport }) {
           onClose={closeModal}
           onDone={() => fetchReports(pagination?.current_page || 1)}
         />
+      )}
+
+      {/* PERMANENT DELETE CONFIRMATION */}
+      {deleteTarget && (
+        <div className="modal-overlay" onClick={closeDeleteModal}>
+          <div
+            className="sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="deleteReportTitle"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="sheet__head">
+              <div>
+                <h3 id="deleteReportTitle">Delete Incident Report</h3>
+                <p style={{ color: 'var(--ink-mute)', fontSize: '0.82rem', margin: '3px 0 0' }}>
+                  Permanent deletion
+                </p>
+              </div>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={closeDeleteModal}
+                disabled={deleting}
+                aria-label="Cancel and close"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="sheet__body">
+              <div
+                style={{
+                  display: 'grid',
+                  gap: '10px',
+                  padding: '14px 16px',
+                  marginBottom: '18px',
+                  background: '#f8fafc',
+                  border: '1px solid var(--border)',
+                  borderRadius: '10px',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-mute)' }}>
+                    Report ID
+                  </div>
+                  <strong style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--navy-600)' }}>
+                    {deleteTarget.report_number || `RW-${deleteTarget.id}`}
+                  </strong>
+                </div>
+                <div>
+                  <div style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-mute)' }}>
+                    Incident
+                  </div>
+                  <strong style={{ fontSize: '14px', color: 'var(--ink)' }}>
+                    {formatAccidentType(deleteTarget.accident_type)}
+                  </strong>
+                  <div style={{ fontSize: '12.5px', color: 'var(--ink-soft)', marginTop: '2px' }}>
+                    {deleteTarget.location_address || 'Location not recorded'}
+                  </div>
+                </div>
+              </div>
+
+              <p style={{ margin: 0, color: 'var(--ink)', fontSize: '14px', lineHeight: 1.6 }}>
+                Are you sure you want to permanently delete this incident report? This action cannot be undone.
+              </p>
+
+              {deleteError && (
+                <div
+                  role="alert"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '8px',
+                    marginTop: '16px',
+                    padding: '10px 14px',
+                    background: '#fee2e2',
+                    border: '1px solid #fecaca',
+                    borderRadius: '8px',
+                    color: '#991b1b',
+                    fontSize: '13px',
+                  }}
+                >
+                  <XCircle size={16} style={{ flexShrink: 0, marginTop: '1px' }} />
+                  <span>{deleteError}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="sheet__foot">
+              <button
+                type="button"
+                className="btn btn--ghost btn--sm"
+                onClick={closeDeleteModal}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn--danger btn--sm"
+                onClick={confirmDelete}
+                disabled={deleting}
+              >
+                <Trash2 size={14} style={{ marginRight: 6 }} />
+                {deleting ? 'Deleting…' : 'Delete Permanently'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </section>
   );

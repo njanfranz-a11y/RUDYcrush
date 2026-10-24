@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\v1;
 
 use App\Http\Controllers\Controller;
+use App\Models\AccidentPhoto;
 use App\Models\AccidentReport;
 use App\Models\AuditLog;
 use App\Models\OfficerAssignment;
@@ -16,6 +17,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -48,8 +50,9 @@ class AdminController extends Controller
             'update_category',
             'supplement_report',
         ],
-        // Archive is the soft-delete path for reports.
-        'delete' => ['archive_report', 'delete_category'],
+        // Permanent deletion must remain filterable alongside historical
+        // archive_report entries written before hard delete was introduced.
+        'delete' => ['archive_report', 'delete_report', 'delete_category'],
     ];
 
     public function dashboardStats(): JsonResponse
@@ -201,26 +204,20 @@ class AdminController extends Controller
         ]);
     }
 
-    /**
-     * Admin verification. Verifying a report is inseparable from dispatching
-     * an active Traffic Officer: the report leaves the admin's hands at this
-     * point and becomes the officer's case to investigate and resolve.
-     */
-    public function verifyReport(Request $request, int $id): JsonResponse
+    public function assignOfficer(Request $request, int $id): JsonResponse
     {
         $report = AccidentReport::findOrFail($id);
         $admin = $request->user();
 
-        if (!AccidentReport::canTransition($report->status, 'verified')) {
+        if (in_array($report->status, ['closed', 'rejected'], true)) {
             return response()->json([
                 'success' => false,
-                'message' => "Cannot transition report from '{$report->status}' to 'verified'.",
+                'message' => "A {$report->status} report can no longer be assigned.",
             ], 422);
         }
 
         $validated = $request->validate([
             'officer_id' => ['required', 'integer', 'exists:users,id'],
-            'official_remarks' => ['nullable', 'string', 'max:1000'],
             'assignment_notes' => ['nullable', 'string', 'max:1000'],
         ]);
 
@@ -236,154 +233,6 @@ class AdminController extends Controller
                 'errors' => ['officer_id' => ['The selected user is not an active Traffic Officer.']],
             ], 422);
         }
-
-        DB::transaction(function () use ($report, $admin, $officer, $validated) {
-            $oldStatus = $report->status;
-
-            // Verification fields.
-            $report->verified_by = $admin->id;
-            $report->verified_at = now();
-            if (!empty($validated['official_remarks'])) {
-                $report->official_remarks = $validated['official_remarks'];
-            }
-
-            // Dispatch to the officer immediately.
-            $report->assigned_officer_id = $officer->id;
-            $report->status = 'assigned';
-            $report->save();
-
-            OfficerAssignment::create([
-                'accident_report_id' => $report->id,
-                'officer_id' => $officer->id,
-                'assigned_by' => $admin->id,
-                'assignment_notes' => $validated['assignment_notes'] ?? null,
-                'status' => 'active',
-            ]);
-
-            ReportStatusHistory::create([
-                'accident_report_id' => $report->id,
-                'user_id' => $admin->id,
-                'from_status' => $oldStatus,
-                'to_status' => 'assigned',
-                'remarks' => "Verified by administrator and assigned to {$officer->name} ({$officer->badge_number}). "
-                    . ($validated['official_remarks'] ?? ''),
-            ]);
-
-            AuditLog::record(
-                $admin->id,
-                'verify_report',
-                'AccidentReport',
-                $report->id,
-                "Admin {$admin->name} officially verified report {$report->report_number}"
-            );
-
-            AuditLog::record(
-                $admin->id,
-                'assign_officer',
-                'AccidentReport',
-                $report->id,
-                "Assigned report {$report->report_number} to officer {$officer->name}"
-            );
-
-            // Notify the officer that a new case is on their desk.
-            SystemNotification::notify(
-                $officer->id,
-                "New Incident Assigned: {$report->report_number}",
-                "You have been assigned to investigate an incident at {$report->location_address}",
-                'assignment',
-                "/officer/reports/{$report->id}"
-            );
-
-            if ($report->user_id) {
-                SystemNotification::notify(
-                    $report->user_id,
-                    "Report Verified: {$report->report_number}",
-                    "Your reported accident has been verified. Traffic Officer {$officer->name} has been assigned to investigate.",
-                    'status_change',
-                    "/reports/{$report->id}"
-                );
-            }
-        });
-
-        $report->load(['category', 'photos', 'assignedOfficer', 'verifiedBy', 'assignments.officer', 'statusHistory']);
-
-        return response()->json([
-            'success' => true,
-            'message' => "Report verified and assigned to {$officer->name}.",
-            'data' => $report,
-        ]);
-    }
-
-    public function rejectReport(Request $request, int $id): JsonResponse
-    {
-        $report = AccidentReport::findOrFail($id);
-        $admin = $request->user();
-
-        if (!AccidentReport::canTransition($report->status, 'rejected')) {
-            return response()->json([
-                'success' => false,
-                'message' => "Cannot transition report from '{$report->status}' to 'rejected'.",
-            ], 422);
-        }
-
-        // Section 7 Requirement: Require rejection reason when rejecting reports
-        $validated = $request->validate([
-            'rejection_reason' => ['required', 'string', 'min:10', 'max:1000'],
-        ]);
-
-        DB::transaction(function () use ($report, $admin, $validated) {
-            $oldStatus = $report->status;
-            $report->status = 'rejected';
-            $report->rejection_reason = $validated['rejection_reason'];
-            $report->save();
-
-            ReportStatusHistory::create([
-                'accident_report_id' => $report->id,
-                'user_id' => $admin->id,
-                'from_status' => $oldStatus,
-                'to_status' => 'rejected',
-                'remarks' => $validated['rejection_reason'],
-            ]);
-
-            AuditLog::record(
-                $admin->id,
-                'reject_report',
-                'AccidentReport',
-                $report->id,
-                "Admin {$admin->name} rejected report {$report->report_number}: {$validated['rejection_reason']}"
-            );
-
-            if ($report->user_id) {
-                SystemNotification::notify(
-                    $report->user_id,
-                    "Report Rejected: {$report->report_number}",
-                    "Your report was rejected. Reason: {$validated['rejection_reason']}",
-                    'rejection',
-                    "/reports/{$report->id}"
-                );
-            }
-        });
-
-        $report->load(['category', 'photos', 'statusHistory']);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Report rejected and reason recorded.',
-            'data' => $report,
-        ]);
-    }
-
-    public function assignOfficer(Request $request, int $id): JsonResponse
-    {
-        $report = AccidentReport::findOrFail($id);
-        $admin = $request->user();
-
-        $validated = $request->validate([
-            'officer_id' => ['required', 'exists:users,id'],
-            'assignment_notes' => ['nullable', 'string', 'max:1000'],
-        ]);
-
-        $officer = User::where('id', $validated['officer_id'])->where('role', 'officer')->firstOrFail();
 
         DB::transaction(function () use ($report, $officer, $admin, $validated) {
             $oldStatus = $report->status;
@@ -494,24 +343,83 @@ class AdminController extends Controller
         ]);
     }
 
-    public function softDelete(Request $request, int $id): JsonResponse
+    /**
+     * Permanently delete a report and every report-specific record.
+     *
+     * The database work is transactional so a failure cannot leave a
+     * half-deleted report. Photo files are removed only after the transaction
+     * commits, and only when no other report still references the same path.
+     */
+    public function destroyReport(Request $request, int $id): JsonResponse
     {
-        $report = AccidentReport::findOrFail($id);
+        $report = AccidentReport::with('photos')->findOrFail($id);
         $admin = $request->user();
 
-        $report->delete(); // Soft delete as required in spec section 3
+        $reportNumber = $report->report_number;
+        $reportStatus = $report->status;
+        $photoPaths = $report->photos
+            ->pluck('file_path')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+        $photoCount = $report->photos->count();
 
-        AuditLog::record(
-            $admin->id,
-            'archive_report',
-            'AccidentReport',
-            $id,
-            "Soft-deleted/archived accident report {$report->report_number}"
-        );
+        try {
+            DB::transaction(function () use ($report, $admin, $reportNumber, $reportStatus, $photoCount) {
+                // Notification links point at a report screen that will no
+                // longer exist; remove only this report's exact links.
+                SystemNotification::whereIn('link', [
+                    "/reports/{$report->id}",
+                    "/admin/reports/{$report->id}",
+                    "/officer/reports/{$report->id}",
+                ])->delete();
+
+                // Written before the delete (inside the same transaction) so
+                // the security trail commits together with the deletion and
+                // survives it. AuditLog has no foreign key to the report.
+                AuditLog::record(
+                    $admin->id,
+                    'delete_report',
+                    'AccidentReport',
+                    $report->id,
+                    "Permanently deleted accident report {$reportNumber}",
+                    [
+                        'report_number' => $reportNumber,
+                        'status' => $reportStatus,
+                        'photo_count' => $photoCount,
+                    ]
+                );
+
+                // AccidentPhoto, ReportStatusHistory and OfficerAssignment
+                // cascade at the database level for this report.
+                $report->forceDelete();
+            });
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'The report could not be deleted. No changes were made.',
+            ], 500);
+        }
+
+        // Files go after the commit: a failed database delete must never leave
+        // a live report without its evidence. The reference check protects a
+        // file path that another report might still use.
+        foreach ($photoPaths as $path) {
+            try {
+                if (!AccidentPhoto::where('file_path', $path)->exists()) {
+                    Storage::disk('public')->delete($path);
+                }
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
+        }
 
         return response()->json([
             'success' => true,
-            'message' => "Report {$report->report_number} has been archived.",
+            'message' => "Report {$reportNumber} has been permanently deleted.",
         ]);
     }
 

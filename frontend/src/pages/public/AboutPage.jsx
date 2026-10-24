@@ -90,10 +90,10 @@ export default function AboutPage() {
                   <td><CheckCircle2 size={16} color="#16a34a" /></td>
                 </tr>
                 <tr>
-                  <td>Verify / Reject Reports</td>
-                  <td>&mdash;</td>
+                  <td>Verify / Reject Assigned Reports</td>
                   <td>&mdash;</td>
                   <td><CheckCircle2 size={16} color="#16a34a" /></td>
+                  <td>&mdash;</td>
                 </tr>
                 <tr>
                   <td>Assign Reports to Officers</td>
@@ -102,10 +102,10 @@ export default function AboutPage() {
                   <td><CheckCircle2 size={16} color="#16a34a" /></td>
                 </tr>
                 <tr>
-                  <td>Investigate & Close Cases</td>
+                  <td>Investigate, Update &amp; Close Cases</td>
                   <td>&mdash;</td>
                   <td><CheckCircle2 size={16} color="#16a34a" /></td>
-                  <td><CheckCircle2 size={16} color="#16a34a" /></td>
+                  <td>&mdash;</td>
                 </tr>
                 <tr>
                   <td>Export PDF & CSV Summaries</td>

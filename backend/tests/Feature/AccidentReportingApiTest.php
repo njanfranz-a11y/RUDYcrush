@@ -6,6 +6,9 @@ use App\Models\AccidentCategory;
 use App\Models\AccidentPhoto;
 use App\Models\AccidentReport;
 use App\Models\AuditLog;
+use App\Models\OfficerAssignment;
+use App\Models\ReportStatusHistory;
+use App\Models\SystemNotification;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -660,16 +663,125 @@ class AccidentReportingApiTest extends TestCase
     }
 
     /**
-     * The officer Verification Queue was removed: verification is an Admin
-     * responsibility, so the officer endpoint must no longer exist.
+     * The officer Verification Queue lists only cases the admin has assigned
+     * to the logged-in officer and that still need an officer decision.
      */
-    public function test_officer_verification_queue_endpoint_is_removed(): void
+    public function test_officer_verification_queue_lists_only_own_assigned_cases(): void
     {
         $officer = User::factory()->create(['role' => 'officer', 'is_active' => true]);
+        $other = User::factory()->create(['role' => 'officer', 'is_active' => true]);
+
+        $mine = $this->seedReport(['assigned_officer_id' => $officer->id, 'status' => 'assigned']);
+        $this->seedReport(['assigned_officer_id' => $other->id, 'status' => 'assigned']);
+        // Already decided or not dispatched yet: not awaiting verification.
+        $this->seedReport(['assigned_officer_id' => $officer->id, 'status' => 'verified']);
+        $this->seedReport(['assigned_officer_id' => $officer->id, 'status' => 'in_progress']);
+        $this->seedReport(['assigned_officer_id' => null, 'status' => 'submitted']);
 
         Sanctum::actingAs($officer);
 
-        $this->getJson('/api/v1/officer/verification-queue')->assertStatus(404);
+        $response = $this->getJson('/api/v1/officer/verification-queue')->assertStatus(200);
+
+        $ids = collect($response->json('data.data'))->pluck('id');
+
+        $this->assertTrue($ids->contains($mine->id));
+        $this->assertCount(1, $ids);
+    }
+
+    public function test_officer_verification_queue_supports_search(): void
+    {
+        $officer = User::factory()->create(['role' => 'officer', 'is_active' => true]);
+
+        $matching = $this->seedReport([
+            'assigned_officer_id' => $officer->id,
+            'status' => 'assigned',
+            'location_address' => 'Baliuag Public Market, Bulacan',
+        ]);
+        $other = $this->seedReport([
+            'assigned_officer_id' => $officer->id,
+            'status' => 'assigned',
+        ]);
+
+        Sanctum::actingAs($officer);
+
+        $response = $this->getJson('/api/v1/officer/verification-queue?search=Baliuag')->assertStatus(200);
+
+        $ids = collect($response->json('data.data'))->pluck('id');
+
+        $this->assertTrue($ids->contains($matching->id));
+        $this->assertFalse($ids->contains($other->id));
+    }
+
+    public function test_officer_verification_queue_is_officer_only(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin', 'is_active' => true]);
+        Sanctum::actingAs($admin);
+
+        $this->getJson('/api/v1/officer/verification-queue')->assertStatus(403);
+
+        $this->app['auth']->forgetGuards();
+
+        $reporter = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
+        Sanctum::actingAs($reporter);
+
+        $this->getJson('/api/v1/officer/verification-queue')->assertStatus(403);
+    }
+
+    public function test_assigned_officer_can_verify_a_report_without_resolving_it(): void
+    {
+        $officer = User::factory()->create(['role' => 'officer', 'is_active' => true]);
+        $report = $this->seedReport(['assigned_officer_id' => $officer->id, 'status' => 'assigned']);
+
+        Sanctum::actingAs($officer);
+
+        $this->putJson("/api/v1/officer/reports/{$report->id}/verify", [
+            'official_remarks' => 'Confirmed on site.',
+        ])
+            ->assertStatus(200)
+            ->assertJsonPath('data.status', 'verified')
+            ->assertJsonPath('data.assigned_officer_id', $officer->id);
+
+        $this->assertDatabaseHas('accident_reports', [
+            'id' => $report->id,
+            'status' => 'verified',
+            'assigned_officer_id' => $officer->id,
+            'verified_by' => $officer->id,
+            'closed_at' => null,
+        ]);
+
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'verify_report',
+            'target_id' => $report->id,
+        ]);
+
+        // Verification must not re-dispatch the case to someone else.
+        $this->assertDatabaseCount('officer_assignments', 0);
+    }
+
+    public function test_assigned_officer_can_reject_a_report_with_a_reason(): void
+    {
+        $officer = User::factory()->create(['role' => 'officer', 'is_active' => true]);
+        $report = $this->seedReport(['assigned_officer_id' => $officer->id, 'status' => 'assigned']);
+
+        Sanctum::actingAs($officer);
+
+        $this->putJson("/api/v1/officer/reports/{$report->id}/reject", [
+            'rejection_reason' => 'Duplicate report already under investigation.',
+        ])
+            ->assertStatus(200)
+            ->assertJsonPath('data.status', 'rejected');
+
+        $this->assertDatabaseHas('accident_reports', [
+            'id' => $report->id,
+            'status' => 'rejected',
+            'rejection_reason' => 'Duplicate report already under investigation.',
+            'assigned_officer_id' => $officer->id,
+        ]);
+
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'reject_report',
+            'target_id' => $report->id,
+        ]);
     }
 
     /**
@@ -696,10 +808,10 @@ class AccidentReportingApiTest extends TestCase
     }
 
     /**
-     * Even on a case assigned to them, an officer may not set the status to
-     * 'verified'. Only the Admin verify endpoint may do that.
+     * The investigation status endpoint still refuses 'verified': officer
+     * verification has its own dedicated endpoint with an ownership check.
      */
-    public function test_officer_cannot_verify_an_assigned_report(): void
+    public function test_officer_cannot_verify_through_the_status_endpoint(): void
     {
         $officer = User::factory()->create(['role' => 'officer', 'is_active' => true]);
         $report = $this->seedReport(['assigned_officer_id' => $officer->id, 'status' => 'assigned']);
@@ -708,10 +820,10 @@ class AccidentReportingApiTest extends TestCase
 
         $this->putJson("/api/v1/officer/reports/{$report->id}/status", [
             'status' => 'verified',
-            'official_remarks' => 'Trying to self-verify.',
+            'official_remarks' => 'Trying to self-verify through the status route.',
         ])
             ->assertStatus(422)
-            ->assertJsonValidationErrors('status');
+            ->assertJsonPath('success', false);
 
         $this->assertDatabaseHas('accident_reports', [
             'id' => $report->id,
@@ -811,15 +923,24 @@ class AccidentReportingApiTest extends TestCase
 
     /**
      * The legitimate officer workflow begins with an Admin-assigned case: the
-     * officer marks it in progress and later closes it. Claiming unassigned
-     * intake reports is no longer part of the officer role.
+     * officer verifies it, then marks it in progress and later closes it.
+     * Investigation updates are refused until the case is verified.
      */
-    public function test_officer_can_investigate_and_close_an_assigned_report(): void
+    public function test_officer_must_verify_before_investigating_and_closing(): void
     {
         $officer = User::factory()->create(['role' => 'officer', 'is_active' => true]);
         $report = $this->seedReport(['assigned_officer_id' => $officer->id, 'status' => 'assigned']);
 
         Sanctum::actingAs($officer);
+
+        $this->putJson("/api/v1/officer/reports/{$report->id}/status", [
+            'status' => 'in_progress',
+            'official_remarks' => 'Trying to skip verification.',
+        ])->assertStatus(422);
+
+        $this->putJson("/api/v1/officer/reports/{$report->id}/verify", [
+            'official_remarks' => 'Verified after field check.',
+        ])->assertStatus(200);
 
         $this->putJson("/api/v1/officer/reports/{$report->id}/status", [
             'status' => 'in_progress',
@@ -830,6 +951,7 @@ class AccidentReportingApiTest extends TestCase
             'id' => $report->id,
             'status' => 'in_progress',
             'assigned_officer_id' => $officer->id,
+            'verified_by' => $officer->id,
         ]);
 
         $this->putJson("/api/v1/officer/reports/{$report->id}/status", [
@@ -851,6 +973,15 @@ class AccidentReportingApiTest extends TestCase
         $report = $this->seedReport(['assigned_officer_id' => $other->id, 'status' => 'assigned']);
 
         Sanctum::actingAs($officer);
+
+        // Another officer cannot verify, reject, or update the case.
+        $this->putJson("/api/v1/officer/reports/{$report->id}/verify", [
+            'official_remarks' => 'Attempted unauthorised verification.',
+        ])->assertStatus(404);
+
+        $this->putJson("/api/v1/officer/reports/{$report->id}/reject", [
+            'rejection_reason' => 'Attempted unauthorised rejection.',
+        ])->assertStatus(404);
 
         $this->putJson("/api/v1/officer/reports/{$report->id}/status", [
             'status' => 'closed',
@@ -1163,6 +1294,7 @@ class AccidentReportingApiTest extends TestCase
         $expectedGroups = [
             'request_additional_info' => 'update',
             'archive_report' => 'delete',
+            'delete_report' => 'delete',
             'update_category' => 'update',
             'delete_category' => 'delete',
             'create_category' => 'create',
@@ -1258,15 +1390,16 @@ class AccidentReportingApiTest extends TestCase
         foreach ([
             '/api/v1/officer/dashboard/stats',
             '/api/v1/officer/assigned-reports',
+            '/api/v1/officer/verification-queue',
         ] as $route) {
             $this->getJson($route)
                 ->assertStatus(200)
                 ->assertJsonPath('success', true);
         }
 
-        // Officer-only investigation write action still works on a case that
-        // the Admin has assigned to them.
-        $report = $this->seedReport(['assigned_officer_id' => $officerUser->id, 'status' => 'assigned']);
+        // Officer-only investigation write action still works on a case the
+        // Admin has assigned to them and the officer has verified.
+        $report = $this->seedReport(['assigned_officer_id' => $officerUser->id, 'status' => 'verified']);
         $this->putJson("/api/v1/officer/reports/{$report->id}/status", [
             'status' => 'in_progress',
             'official_remarks' => 'Investigating on duty.',
@@ -1615,9 +1748,315 @@ class AccidentReportingApiTest extends TestCase
         $this->postJson('/api/v1/reports', array_merge($baseReport, ['reporter_contact' => '09171234567']))
             ->assertStatus(201);
 
-        // The field stays optional: omitting it is still allowed.
-        $this->postJson('/api/v1/reports', $baseReport)
-            ->assertStatus(201);
+        // The field stays optional: omitting it is still allowed. Use a
+        // separate incident so this is not treated as a duplicate of the
+        // report created just above.
+        $this->postJson('/api/v1/reports', array_merge($baseReport, [
+            'accident_date' => now()->subDays(2)->toDateString(),
+            'accident_time' => '16:00',
+            'location_address' => 'Iglesia Street, Guiguinto, Bulacan',
+            'description' => 'A separate incident report for optional contact validation.',
+        ]))->assertStatus(201);
+    }
+
+    public function test_duplicate_report_submission_is_blocked_and_returns_a_safe_summary(): void
+    {
+        Storage::fake('public');
+
+        $otherResident = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
+        $resident = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
+
+        $existing = $this->seedReport([
+            'user_id' => $otherResident->id,
+            'report_number' => 'AR-EXISTING-0001',
+            'status' => 'under_review',
+        ]);
+
+        $photo = UploadedFile::fake()->create('duplicate_scene.jpg', 100, 'image/jpeg');
+
+        Sanctum::actingAs($resident);
+
+        $response = $this->postJson('/api/v1/reports', [
+            'reporter_name' => 'Second Resident',
+            'reporter_contact' => '09124445555',
+            'accident_date' => now()->subDay()->toDateString(),
+            'accident_time' => '10:40',
+            'location_address' => 'MacArthur Highway, Malolos, Bulacan',
+            'latitude' => 14.8588,
+            'longitude' => 120.8144,
+            'accident_type' => 'Vehicle Collision',
+            'vehicles_involved' => 2,
+            'injury_severity' => 'minor',
+            'description' => 'A delivery van bumped a tricycle and traffic slowed down for a while.',
+            'photos' => [$photo],
+        ]);
+
+        $response->assertStatus(409)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('duplicate.report_number', 'AR-EXISTING-0001')
+            ->assertJsonPath('duplicate.accident_type', 'Rear-end Collision')
+            ->assertJsonPath('duplicate.accident_time', '10:30')
+            ->assertJsonPath('duplicate.status', 'under_review');
+
+        // Only non-sensitive summary fields are exposed.
+        $response->assertJsonMissingPath('duplicate.user_id')
+            ->assertJsonMissingPath('duplicate.reporter_name')
+            ->assertJsonMissingPath('duplicate.reporter_contact')
+            ->assertJsonMissingPath('duplicate.description');
+
+        $this->assertSame(1, AccidentReport::count());
+        $this->assertSame(0, AccidentPhoto::count());
+        $this->assertSame([], Storage::disk('public')->allFiles());
+        $this->assertDatabaseHas('accident_reports', ['id' => $existing->id]);
+    }
+
+    public function test_same_location_at_a_different_time_is_not_a_duplicate(): void
+    {
+        $this->seedReport(['report_number' => 'AR-TIME-0001']);
+
+        $resident = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
+        Sanctum::actingAs($resident);
+
+        $this->postJson('/api/v1/reports', [
+            'reporter_name' => 'Later Reporter',
+            'accident_date' => now()->subDay()->toDateString(),
+            'accident_time' => '14:30',
+            'location_address' => 'MacArthur Highway, Malolos, Bulacan',
+            'latitude' => 14.8587,
+            'longitude' => 120.8143,
+            'accident_type' => 'Rear-end Collision',
+            'vehicles_involved' => 2,
+            'injury_severity' => 'minor',
+            'description' => 'Two passenger vehicles collided along the inner lane.',
+        ])
+            ->assertStatus(201)
+            ->assertJsonPath('duplicate_check.status', 'checked');
+
+        $this->assertSame(2, AccidentReport::count());
+    }
+
+    public function test_same_gps_outside_the_radius_is_not_a_duplicate(): void
+    {
+        $this->seedReport(['report_number' => 'AR-RADIUS-0001']);
+
+        $resident = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
+        Sanctum::actingAs($resident);
+
+        // Roughly 1.1 km away but using the same written address: when both
+        // reports have GPS, distance is what decides.
+        $this->postJson('/api/v1/reports', [
+            'reporter_name' => 'Far Reporter',
+            'accident_date' => now()->subDay()->toDateString(),
+            'accident_time' => '10:30',
+            'location_address' => 'MacArthur Highway, Malolos, Bulacan',
+            'latitude' => 14.8687,
+            'longitude' => 120.8143,
+            'accident_type' => 'Collision',
+            'vehicles_involved' => 1,
+            'injury_severity' => 'none',
+            'description' => 'A completely separate incident farther down the road.',
+        ])->assertStatus(201);
+
+        $this->assertSame(2, AccidentReport::count());
+    }
+
+    public function test_duplicate_radius_is_configurable(): void
+    {
+        config(['roadwatch.duplicate_detection.radius_meters' => 50]);
+
+        $this->seedReport(['report_number' => 'AR-CONFIG-0001']);
+
+        $resident = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
+        Sanctum::actingAs($resident);
+
+        // About 110 m away: outside the overridden 50 m radius but inside the
+        // default 300 m radius.
+        $this->postJson('/api/v1/reports', [
+            'reporter_name' => 'Configured Radius Reporter',
+            'accident_date' => now()->subDay()->toDateString(),
+            'accident_time' => '10:30',
+            'location_address' => 'MacArthur Highway, Malolos, Bulacan',
+            'latitude' => 14.8587,
+            'longitude' => 120.8153,
+            'accident_type' => 'Collision',
+            'vehicles_involved' => 1,
+            'injury_severity' => 'none',
+            'description' => 'Testing the configured duplicate radius.',
+        ])->assertStatus(201);
+
+        $this->assertSame(2, AccidentReport::count());
+    }
+
+    public function test_duplicate_time_window_is_configurable(): void
+    {
+        config(['roadwatch.duplicate_detection.time_window_minutes' => 30]);
+
+        $this->seedReport(['report_number' => 'AR-WINDOW-0001']);
+
+        $resident = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
+        Sanctum::actingAs($resident);
+
+        // 45 minutes later: inside the default 2-hour window, but outside the
+        // overridden 30-minute window.
+        $this->postJson('/api/v1/reports', [
+            'reporter_name' => 'Configured Window Reporter',
+            'accident_date' => now()->subDay()->toDateString(),
+            'accident_time' => '11:15',
+            'location_address' => 'MacArthur Highway, Malolos, Bulacan',
+            'latitude' => 14.8587,
+            'longitude' => 120.8143,
+            'accident_type' => 'Collision',
+            'vehicles_involved' => 1,
+            'injury_severity' => 'none',
+            'description' => 'Testing the configured duplicate time window.',
+        ])->assertStatus(201);
+
+        $this->assertSame(2, AccidentReport::count());
+    }
+
+    public function test_verified_reports_are_checked_for_duplicates(): void
+    {
+        $this->seedReport([
+            'report_number' => 'AR-VERIFIED-0001',
+            'status' => 'verified',
+        ]);
+
+        $resident = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
+        Sanctum::actingAs($resident);
+
+        $this->postJson('/api/v1/reports', [
+            'reporter_name' => 'Duplicate Reporter',
+            'accident_date' => now()->subDay()->toDateString(),
+            'accident_time' => '11:15',
+            'location_address' => 'MacArthur Highway, Malolos, Bulacan',
+            'latitude' => 14.8588,
+            'longitude' => 120.8144,
+            'accident_type' => 'Collision',
+            'vehicles_involved' => 1,
+            'injury_severity' => 'none',
+            'description' => 'Different wording for the same verified accident.',
+        ])
+            ->assertStatus(409)
+            ->assertJsonPath('duplicate.status', 'verified');
+
+        $this->assertSame(1, AccidentReport::count());
+    }
+
+    public function test_missing_gps_falls_back_to_the_written_address(): void
+    {
+        $this->seedReport([
+            'report_number' => 'AR-NOGPS-0001',
+            'latitude' => null,
+            'longitude' => null,
+        ]);
+
+        $resident = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
+        Sanctum::actingAs($resident);
+
+        $response = $this->postJson('/api/v1/reports', [
+            'reporter_name' => 'No GPS Reporter',
+            'accident_date' => now()->subDay()->toDateString(),
+            'accident_time' => '11:00',
+            'location_address' => 'MacArthur Highway, Malolos, Bulacan',
+            'accident_type' => 'Collision',
+            'vehicles_involved' => 1,
+            'injury_severity' => 'none',
+            'description' => 'The same accident described without GPS coordinates.',
+        ]);
+
+        $response->assertStatus(409)
+            ->assertJsonPath('duplicate.report_number', 'AR-NOGPS-0001');
+
+        $this->assertSame(1, AccidentReport::count());
+    }
+
+    public function test_successful_submission_without_gps_explains_the_inconclusive_check(): void
+    {
+        $this->seedReport(['report_number' => 'AR-OTHER-PLACE-0001']);
+
+        $resident = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
+        Sanctum::actingAs($resident);
+
+        $this->postJson('/api/v1/reports', [
+            'reporter_name' => 'No GPS Reporter',
+            'accident_date' => now()->subDay()->toDateString(),
+            'accident_time' => '10:30',
+            'location_address' => 'Iglesia Street, Guiguinto, Bulacan',
+            'accident_type' => 'Collision',
+            'vehicles_involved' => 1,
+            'injury_severity' => 'none',
+            'description' => 'A separate incident reported without GPS coordinates.',
+        ])
+            ->assertStatus(201)
+            ->assertJsonPath('duplicate_check.status', 'inconclusive')
+            ->assertJsonPath(
+                'duplicate_check.message',
+                'No GPS coordinates were provided, so duplicate detection used the written location and time. A nearby report may not have been detected.'
+            );
+
+        $this->assertSame(2, AccidentReport::count());
+    }
+
+    public function test_two_residents_submitting_the_same_accident_create_only_one_report(): void
+    {
+        $first = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
+        $second = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
+
+        $payload = [
+            'accident_date' => now()->subDay()->toDateString(),
+            'accident_time' => '10:30',
+            'location_address' => 'MacArthur Highway, Malolos, Bulacan',
+            'latitude' => 14.8587,
+            'longitude' => 120.8143,
+            'accident_type' => 'Collision',
+            'vehicles_involved' => 1,
+            'injury_severity' => 'none',
+        ];
+
+        Sanctum::actingAs($first);
+        $this->postJson('/api/v1/reports', array_merge($payload, [
+            'reporter_name' => 'First Resident',
+            'description' => 'A blue sedan hit the guardrail near the intersection.',
+        ]))->assertStatus(201);
+
+        // The advisory lock serializes real concurrent requests; this call
+        // verifies the second Resident is checked against the first report.
+        $this->app['auth']->forgetGuards();
+        Sanctum::actingAs($second);
+        $this->postJson('/api/v1/reports', array_merge($payload, [
+            'reporter_name' => 'Second Resident',
+            'description' => 'A car crashed by the roadside, according to another witness.',
+        ]))
+            ->assertStatus(409)
+            ->assertJsonPath('success', false);
+
+        $this->assertSame(1, AccidentReport::count());
+    }
+
+    public function test_rejected_reports_do_not_block_a_new_report(): void
+    {
+        $this->seedReport([
+            'report_number' => 'AR-REJECTED-0001',
+            'status' => 'rejected',
+        ]);
+
+        $resident = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
+        Sanctum::actingAs($resident);
+
+        $this->postJson('/api/v1/reports', [
+            'reporter_name' => 'Resubmitting Resident',
+            'accident_date' => now()->subDay()->toDateString(),
+            'accident_time' => '10:30',
+            'location_address' => 'MacArthur Highway, Malolos, Bulacan',
+            'latitude' => 14.8587,
+            'longitude' => 120.8143,
+            'accident_type' => 'Rear-end Collision',
+            'vehicles_involved' => 2,
+            'injury_severity' => 'minor',
+            'description' => 'Two passenger vehicles collided along the inner lane.',
+        ])->assertStatus(201);
+
+        $this->assertSame(2, AccidentReport::count());
     }
 
     public function test_ordinary_reporter_cannot_access_admin_stats(): void
@@ -1629,6 +2068,227 @@ class AccidentReportingApiTest extends TestCase
 
         $response->assertStatus(403)
             ->assertJsonPath('success', false);
+    }
+
+    public function test_each_resident_only_receives_their_own_reports(): void
+    {
+        $alice = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
+        $bob = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
+
+        $aliceReport = $this->seedReport([
+            'user_id' => $alice->id,
+            'report_number' => 'AR-ALICE-0001',
+            'reporter_name' => 'Alice Resident',
+        ]);
+        $bobReport = $this->seedReport([
+            'user_id' => $bob->id,
+            'report_number' => 'AR-BOB-0001',
+            'reporter_name' => 'Bob Resident',
+        ]);
+        // A report with no owner must never leak into a resident's inbox.
+        $this->seedReport(['user_id' => null, 'report_number' => 'AR-ORPHAN-0001']);
+
+        Sanctum::actingAs($alice);
+        $aliceIds = collect($this->getJson('/api/v1/my-reports')->assertOk()->json('data.data'))
+            ->pluck('id');
+        $this->assertTrue($aliceIds->contains($aliceReport->id));
+        $this->assertFalse($aliceIds->contains($bobReport->id));
+        $this->assertCount(1, $aliceIds);
+
+        Sanctum::actingAs($bob);
+        $bobIds = collect($this->getJson('/api/v1/my-reports')->assertOk()->json('data.data'))
+            ->pluck('id');
+        $this->assertTrue($bobIds->contains($bobReport->id));
+        $this->assertFalse($bobIds->contains($aliceReport->id));
+        $this->assertCount(1, $bobIds);
+    }
+
+    public function test_resident_dashboard_chart_data_is_real_and_owner_scoped(): void
+    {
+        $alice = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
+        $bob = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
+        $flooding = AccidentCategory::create([
+            'name' => 'Flooding',
+            'slug' => 'flooding',
+            'is_active' => true,
+        ]);
+
+        $submitted = $this->seedReport([
+            'user_id' => $alice->id,
+            'report_number' => 'AR-DASH-ALICE-1',
+            'status' => 'submitted',
+        ]);
+
+        $closed = $this->seedReport([
+            'user_id' => $alice->id,
+            'report_number' => 'AR-DASH-ALICE-2',
+            'category_id' => $flooding->id,
+            'status' => 'closed',
+            'closed_at' => now()->subWeek(),
+        ]);
+        // Place the filing two weeks back so the bucket and average resolution
+        // time are derived from timestamps, not from the current date.
+        $closed->created_at = now()->subWeeks(2);
+        $closed->save();
+
+        $bobReport = $this->seedReport([
+            'user_id' => $bob->id,
+            'report_number' => 'AR-DASH-BOB-1',
+            'status' => 'submitted',
+        ]);
+
+        Sanctum::actingAs($alice);
+
+        $response = $this->getJson('/api/v1/my-reports/dashboard?weeks=12')
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.counts.total', 2)
+            ->assertJsonPath('data.counts.awaiting_review', 1)
+            ->assertJsonPath('data.counts.in_progress_and_resolved', 1)
+            ->assertJsonPath('data.counts.resolved', 1)
+            ->assertJsonPath('data.trend.weeks', 12);
+
+        $payload = $response->json('data');
+        $this->assertCount(12, $payload['trend']['buckets']);
+        $this->assertSame(2, collect($payload['trend']['buckets'])->sum('filed'));
+        $this->assertSame(1, collect($payload['trend']['buckets'])->sum('resolved'));
+        $this->assertNotNull($payload['average_resolution_hours']);
+        $this->assertGreaterThan(0, $payload['average_resolution_hours']);
+
+        $categories = collect($payload['by_category'])->keyBy('name');
+        $this->assertSame(1, $categories['Collision']['count']);
+        $this->assertSame(1, $categories['Flooding']['count']);
+        $this->assertEquals(50, $categories['Collision']['percentage']);
+        $this->assertEquals(50, $categories['Flooding']['percentage']);
+
+        $recentIds = collect($payload['recent_reports'])->pluck('id');
+        $this->assertTrue($recentIds->contains($submitted->id));
+        $this->assertTrue($recentIds->contains($closed->id));
+        $this->assertFalse($recentIds->contains($bobReport->id));
+
+        // The filter requests shorter ranges and the backend returns exactly
+        // that many weekly buckets.
+        $this->getJson('/api/v1/my-reports/dashboard?weeks=4')
+            ->assertOk()
+            ->assertJsonPath('data.trend.weeks', 4)
+            ->assertJsonCount(4, 'data.trend.buckets');
+
+        $this->getJson('/api/v1/my-reports/dashboard?weeks=5')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['weeks']);
+    }
+
+    public function test_resident_dashboard_returns_an_empty_series_when_there_are_no_reports(): void
+    {
+        $resident = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
+        Sanctum::actingAs($resident);
+
+        $response = $this->getJson('/api/v1/my-reports/dashboard?weeks=6')
+            ->assertOk()
+            ->assertJsonPath('data.counts.total', 0)
+            ->assertJsonPath('data.counts.awaiting_review', 0)
+            ->assertJsonPath('data.counts.in_progress_and_resolved', 0)
+            ->assertJsonPath('data.counts.resolved', 0)
+            ->assertJsonPath('data.average_resolution_hours', null)
+            ->assertJsonCount(6, 'data.trend.buckets')
+            ->assertJsonCount(0, 'data.by_category')
+            ->assertJsonCount(0, 'data.recent_reports');
+
+        $buckets = collect($response->json('data.trend.buckets'));
+        $this->assertSame(0, $buckets->sum('filed'));
+        $this->assertSame(0, $buckets->sum('resolved'));
+    }
+
+    public function test_admin_dashboard_stats_match_database_records(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin', 'is_active' => true]);
+
+        $this->seedReport([
+            'accident_type' => 'Collision',
+            'injury_severity' => 'minor',
+            'status' => 'submitted',
+            'accident_date' => now()->subDay()->toDateString(),
+        ]);
+        $this->seedReport([
+            'accident_type' => 'Collision',
+            'injury_severity' => 'severe',
+            'status' => 'closed',
+            'accident_date' => now()->subDay()->toDateString(),
+        ]);
+        $this->seedReport([
+            'accident_type' => 'Rollover',
+            'injury_severity' => 'none',
+            'status' => 'verified',
+            'accident_date' => now()->subDay()->toDateString(),
+        ]);
+        $this->seedReport([
+            'accident_type' => 'Hit-and-run',
+            'injury_severity' => 'fatal',
+            'status' => 'rejected',
+            'accident_date' => now()->subDay()->toDateString(),
+        ]);
+        $this->seedReport([
+            'accident_type' => 'Collision',
+            'injury_severity' => 'minor',
+            'status' => 'assigned',
+            'accident_date' => now()->subDay()->toDateString(),
+        ]);
+        $this->seedReport([
+            'accident_type' => 'Rollover',
+            'injury_severity' => 'severe',
+            'status' => 'in_progress',
+            'accident_date' => now()->subDay()->toDateString(),
+        ]);
+
+        Sanctum::actingAs($admin);
+
+        $response = $this->getJson('/api/v1/admin/dashboard/stats')
+            ->assertOk()
+            ->assertJsonPath('data.counts.total', 6)
+            ->assertJsonPath('data.counts.pending', 1)
+            ->assertJsonPath('data.counts.verified', 1)
+            ->assertJsonPath('data.counts.assigned', 1)
+            ->assertJsonPath('data.counts.in_progress', 1)
+            ->assertJsonPath('data.counts.closed', 1)
+            ->assertJsonPath('data.counts.rejected', 1)
+            ->assertJsonPath('data.counts.active_investigations', 2);
+
+        $payload = $response->json('data');
+        $byType = collect($payload['by_type'])->pluck('count', 'accident_type');
+        $this->assertSame(3, (int) $byType['Collision']);
+        $this->assertSame(2, (int) $byType['Rollover']);
+        $this->assertSame(1, (int) $byType['Hit-and-run']);
+
+        $bySeverity = collect($payload['by_severity'])->pluck('count', 'injury_severity');
+        $this->assertSame(2, (int) $bySeverity['minor']);
+        $this->assertSame(2, (int) $bySeverity['severe']);
+        $this->assertSame(1, (int) $bySeverity['none']);
+        $this->assertSame(1, (int) $bySeverity['fatal']);
+
+        // The 7-day trend is also derived from the same reports.
+        $this->assertSame(6, (int) collect($payload['weekly_trend'])->sum('count'));
+    }
+
+    public function test_resident_cannot_open_another_residents_report_by_id(): void
+    {
+        $owner = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
+        $intruder = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
+
+        $report = $this->seedReport([
+            'user_id' => $owner->id,
+            'report_number' => 'AR-PRIVATE-0001',
+        ]);
+
+        Sanctum::actingAs($owner);
+        $this->getJson("/api/v1/reports/{$report->id}")
+            ->assertOk()
+            ->assertJsonPath('data.id', $report->id);
+
+        Sanctum::actingAs($intruder);
+        $this->getJson("/api/v1/reports/{$report->id}")
+            ->assertStatus(403)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('message', 'Unauthorized access to this report.');
     }
 
     public function test_admin_can_access_stats(): void
@@ -1643,58 +2303,37 @@ class AccidentReportingApiTest extends TestCase
             ->assertJsonStructure(['data' => ['counts', 'by_type', 'by_severity', 'weekly_trend']]);
     }
 
-    public function test_rejection_requires_reason(): void
+    public function test_officer_rejection_requires_reason(): void
     {
-        $admin = User::factory()->create(['role' => 'admin', 'is_active' => true]);
-        Sanctum::actingAs($admin);
+        $officer = User::factory()->create(['role' => 'officer', 'is_active' => true]);
+        $report = $this->seedReport(['assigned_officer_id' => $officer->id, 'status' => 'assigned']);
 
-        $report = AccidentReport::create([
-            'report_number' => 'AR-TEST-001',
-            'reporter_name' => 'Test Reporter',
-            'accident_date' => now()->subDay()->toDateString(),
-            'accident_time' => '12:00',
-            'location_address' => 'Malolos Crossing',
-            'accident_type' => 'Collision',
-            'vehicles_involved' => 1,
-            'injury_severity' => 'none',
-            'description' => 'Test incident description.',
-            'status' => 'submitted',
-        ]);
+        Sanctum::actingAs($officer);
 
-        $response = $this->putJson("/api/v1/admin/reports/{$report->id}/reject", []);
+        $response = $this->putJson("/api/v1/officer/reports/{$report->id}/reject", []);
 
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['rejection_reason']);
+
+        $this->assertDatabaseHas('accident_reports', [
+            'id' => $report->id,
+            'status' => 'assigned',
+        ]);
     }
 
-    public function test_admin_can_verify_submitted_report(): void
+    public function test_admin_can_assign_a_submitted_report_to_an_officer(): void
     {
         $admin = User::factory()->create(['role' => 'admin', 'is_active' => true]);
         $officer = User::factory()->create(['role' => 'officer', 'is_active' => true, 'badge_number' => 'PO-9001']);
         Sanctum::actingAs($admin);
 
-        $report = AccidentReport::create([
-            'report_number' => 'AR-TEST-002',
-            'reporter_name' => 'Test Reporter',
-            'accident_date' => now()->subDay()->toDateString(),
-            'accident_time' => '12:00',
-            'location_address' => 'Guiguinto Exit',
-            'accident_type' => 'Collision',
-            'vehicles_involved' => 2,
-            'injury_severity' => 'none',
-            'description' => 'Incident verified by camera.',
-            'status' => 'submitted',
-        ]);
+        $report = $this->seedReport(['status' => 'submitted']);
 
-        $response = $this->putJson("/api/v1/admin/reports/{$report->id}/verify", [
+        $response = $this->putJson("/api/v1/admin/reports/{$report->id}/assign", [
             'officer_id' => $officer->id,
-            'official_remarks' => 'Confirmed by CCTVs.',
             'assignment_notes' => 'Coordinate with Guiguinto traffic enforcers.',
         ]);
 
-        // Verification immediately dispatches the case to the officer, so the
-        // report lands in the officer's 'assigned' queue rather than sitting
-        // in a dead-end 'verified' limbo.
         $response->assertStatus(200)
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.status', 'assigned')
@@ -1703,7 +2342,6 @@ class AccidentReportingApiTest extends TestCase
         $this->assertDatabaseHas('accident_reports', [
             'id' => $report->id,
             'status' => 'assigned',
-            'verified_by' => $admin->id,
             'assigned_officer_id' => $officer->id,
         ]);
 
@@ -1714,67 +2352,57 @@ class AccidentReportingApiTest extends TestCase
             'status' => 'active',
         ]);
 
-        // Both the verification and the dispatch are audited.
-        $this->assertDatabaseHas('audit_logs', [
-            'action' => 'verify_report',
-            'target_id' => $report->id,
-        ]);
+        // Assignment is audited, but the admin has not verified the report.
         $this->assertDatabaseHas('audit_logs', [
             'action' => 'assign_officer',
             'target_id' => $report->id,
         ]);
+        $this->assertDatabaseMissing('audit_logs', [
+            'action' => 'verify_report',
+            'target_id' => $report->id,
+        ]);
+
+        $this->assertDatabaseHas('accident_reports', [
+            'id' => $report->id,
+            'verified_by' => null,
+        ]);
     }
 
     /**
-     * Verification and rejection are Admin-only at the API layer, not merely
-     * hidden in the UI: an officer token or a citizen token must be refused
-     * even when pointed straight at the admin endpoints.
+     * Verification and rejection were removed from the admin API entirely.
+     * Admin tokens must be refused by the absence of the routes, not merely
+     * by hidden buttons.
      */
-    public function test_officers_and_citizens_cannot_verify_or_reject_reports(): void
+    public function test_admin_cannot_verify_or_reject_reports(): void
     {
-        $report = $this->seedReport(['status' => 'submitted']);
+        $admin = User::factory()->create(['role' => 'admin', 'is_active' => true]);
         $officer = User::factory()->create(['role' => 'officer', 'is_active' => true]);
+        $report = $this->seedReport(['status' => 'submitted']);
 
-        Sanctum::actingAs($officer);
-
-        $this->putJson("/api/v1/admin/reports/{$report->id}/verify", [
-            'officer_id' => $officer->id,
-        ])->assertStatus(403);
-
-        $this->putJson("/api/v1/admin/reports/{$report->id}/reject", [
-            'rejection_reason' => 'Officer attempting to reject.',
-        ])->assertStatus(403);
-
-        $this->app['auth']->forgetGuards();
-
-        $reporter = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
-        Sanctum::actingAs($reporter);
+        Sanctum::actingAs($admin);
 
         $this->putJson("/api/v1/admin/reports/{$report->id}/verify", [
             'officer_id' => $officer->id,
-        ])->assertStatus(403);
+        ])->assertStatus(404);
 
         $this->putJson("/api/v1/admin/reports/{$report->id}/reject", [
-            'rejection_reason' => 'Citizen attempting to reject.',
-        ])->assertStatus(403);
+            'rejection_reason' => 'Admin attempting to reject.',
+        ])->assertStatus(404);
 
-        // The report is untouched by any of the forbidden calls.
         $this->assertDatabaseHas('accident_reports', [
             'id' => $report->id,
             'status' => 'submitted',
         ]);
     }
 
-    public function test_verifying_a_report_requires_an_officer(): void
+    public function test_assigning_a_report_requires_an_officer(): void
     {
         $admin = User::factory()->create(['role' => 'admin', 'is_active' => true]);
         Sanctum::actingAs($admin);
 
         $report = $this->seedReport(['status' => 'submitted']);
 
-        $this->putJson("/api/v1/admin/reports/{$report->id}/verify", [
-            'official_remarks' => 'Looks legit.',
-        ])
+        $this->putJson("/api/v1/admin/reports/{$report->id}/assign", [])
             ->assertStatus(422)
             ->assertJsonValidationErrors('officer_id');
 
@@ -1786,7 +2414,7 @@ class AccidentReportingApiTest extends TestCase
         ]);
     }
 
-    public function test_verifying_a_report_rejects_a_non_officer_assignee(): void
+    public function test_assigning_a_report_rejects_a_non_officer_assignee(): void
     {
         $admin = User::factory()->create(['role' => 'admin', 'is_active' => true]);
         $reporter = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
@@ -1794,14 +2422,14 @@ class AccidentReportingApiTest extends TestCase
 
         $report = $this->seedReport(['status' => 'submitted']);
 
-        $this->putJson("/api/v1/admin/reports/{$report->id}/verify", [
+        $this->putJson("/api/v1/admin/reports/{$report->id}/assign", [
             'officer_id' => $reporter->id,
         ])
             ->assertStatus(422)
             ->assertJsonValidationErrors('officer_id');
     }
 
-    public function test_verifying_a_report_rejects_an_inactive_officer(): void
+    public function test_assigning_a_report_rejects_an_inactive_officer(): void
     {
         $admin = User::factory()->create(['role' => 'admin', 'is_active' => true]);
         $officer = User::factory()->create(['role' => 'officer', 'is_active' => false]);
@@ -1809,11 +2437,31 @@ class AccidentReportingApiTest extends TestCase
 
         $report = $this->seedReport(['status' => 'submitted']);
 
-        $this->putJson("/api/v1/admin/reports/{$report->id}/verify", [
+        $this->putJson("/api/v1/admin/reports/{$report->id}/assign", [
             'officer_id' => $officer->id,
         ])
             ->assertStatus(422)
             ->assertJsonValidationErrors('officer_id');
+    }
+
+    public function test_admin_cannot_assign_a_closed_or_rejected_report(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin', 'is_active' => true]);
+        $officer = User::factory()->create(['role' => 'officer', 'is_active' => true]);
+        Sanctum::actingAs($admin);
+
+        foreach (['closed', 'rejected'] as $status) {
+            $report = $this->seedReport(['status' => $status]);
+
+            $this->putJson("/api/v1/admin/reports/{$report->id}/assign", [
+                'officer_id' => $officer->id,
+            ])->assertStatus(422);
+
+            $this->assertDatabaseHas('accident_reports', [
+                'id' => $report->id,
+                'status' => $status,
+            ]);
+        }
     }
 
     public function test_admin_cannot_resolve_or_close_reports(): void
@@ -1834,11 +2482,11 @@ class AccidentReportingApiTest extends TestCase
     }
 
     /**
-     * The whole hand-off: admin verifies + assigns, the officer picks the case
-     * up from their queue, starts the investigation and closes it out. Only
-     * the assigned officer can perform the resolution steps.
+     * The whole hand-off: admin assigns, the assigned officer verifies,
+     * investigates and closes the case. Only the assigned officer performs
+     * verification and resolution.
      */
-    public function test_full_verification_and_officer_resolution_workflow(): void
+    public function test_full_assignment_verification_and_officer_resolution_workflow(): void
     {
         $admin = User::factory()->create(['role' => 'admin', 'is_active' => true]);
         $officer = User::factory()->create([
@@ -1849,11 +2497,11 @@ class AccidentReportingApiTest extends TestCase
 
         $report = $this->seedReport(['status' => 'submitted']);
 
-        // 1. Admin verifies and dispatches an officer in one action.
+        // 1. Admin dispatches the report to an officer without verifying it.
         Sanctum::actingAs($admin);
-        $this->putJson("/api/v1/admin/reports/{$report->id}/verify", [
+        $this->putJson("/api/v1/admin/reports/{$report->id}/assign", [
             'officer_id' => $officer->id,
-            'official_remarks' => 'Verified via Command Center CCTV.',
+            'assignment_notes' => 'Please verify and investigate.',
         ])
             ->assertStatus(200)
             ->assertJsonPath('data.status', 'assigned')
@@ -1861,16 +2509,23 @@ class AccidentReportingApiTest extends TestCase
 
         $this->app['auth']->forgetGuards();
 
-        // 2. The officer sees the assigned report in their own queue.
+        // 2. The officer sees the case in their own verification queue.
         Sanctum::actingAs($officer);
 
-        $queue = $this->getJson('/api/v1/officer/assigned-reports')->assertStatus(200);
+        $queue = $this->getJson('/api/v1/officer/verification-queue')->assertStatus(200);
         $this->assertTrue(
             collect($queue->json('data.data'))->pluck('id')->contains($report->id),
-            'Assigned officer should see the case handed to them by the admin.'
+            'Assigned officer should see the case in their verification queue.'
         );
 
-        // 3. The officer begins the investigation.
+        // 3. The officer verifies the case.
+        $this->putJson("/api/v1/officer/reports/{$report->id}/verify", [
+            'official_remarks' => 'Verified on site.',
+        ])
+            ->assertStatus(200)
+            ->assertJsonPath('data.status', 'verified');
+
+        // 4. The officer begins the investigation.
         $this->putJson("/api/v1/officer/reports/{$report->id}/status", [
             'status' => 'in_progress',
             'official_remarks' => 'En route to the incident site.',
@@ -1878,7 +2533,7 @@ class AccidentReportingApiTest extends TestCase
             ->assertStatus(200)
             ->assertJsonPath('data.status', 'in_progress');
 
-        // 4. The officer resolves and closes the case.
+        // 5. The officer resolves and closes the case.
         $this->putJson("/api/v1/officer/reports/{$report->id}/status", [
             'status' => 'closed',
             'investigation_findings' => 'Measured skid marks and interviewed witnesses.',
@@ -1891,7 +2546,7 @@ class AccidentReportingApiTest extends TestCase
             'id' => $report->id,
             'status' => 'closed',
             'assigned_officer_id' => $officer->id,
-            'verified_by' => $admin->id,
+            'verified_by' => $officer->id,
         ]);
     }
 
@@ -1960,7 +2615,7 @@ class AccidentReportingApiTest extends TestCase
         $response2 = $this->postJson('/api/v1/reports', [
             'reporter_name' => 'Reporter Two',
             'accident_date' => now()->subDay()->toDateString(),
-            'accident_time' => '11:00',
+            'accident_time' => '13:00',
             'location_address' => 'Location Beta, Bulacan',
             'accident_type' => 'Collision',
             'vehicles_involved' => 2,
@@ -2146,5 +2801,193 @@ class AccidentReportingApiTest extends TestCase
         $this->assertStringStartsWith('%PDF-', $body);
         $pages = preg_match_all('#/Type\s*/Page[^s]#', $body);
         $this->assertGreaterThanOrEqual(2, $pages, 'A 40-row report should span multiple PDF pages.');
+    }
+
+    // -------------------------------------------------------------------------
+    // Permanent report deletion
+    // -------------------------------------------------------------------------
+
+    public function test_admin_can_permanently_delete_a_report_and_all_associated_records(): void
+    {
+        Storage::fake('public');
+        [$admin] = $this->adminToken();
+
+        $reporter = User::factory()->create(['role' => 'reporter', 'is_active' => true]);
+        $officer = User::factory()->create(['role' => 'officer', 'is_active' => true]);
+
+        $report = $this->seedReport([
+            'user_id' => $reporter->id,
+            'report_number' => 'AR-DELETE-0001',
+            'status' => 'assigned',
+            'assigned_officer_id' => $officer->id,
+        ]);
+
+        $photoPath = 'accidents/2026/10/report-photo.jpg';
+        Storage::disk('public')->put($photoPath, 'photo-bytes');
+
+        $photo = AccidentPhoto::create([
+            'accident_report_id' => $report->id,
+            'file_path' => $photoPath,
+            'file_name' => 'report-photo.jpg',
+            'original_name' => 'report-photo.jpg',
+            'file_size' => 11,
+            'mime_type' => 'image/jpeg',
+        ]);
+
+        ReportStatusHistory::create([
+            'accident_report_id' => $report->id,
+            'user_id' => $reporter->id,
+            'from_status' => 'verified',
+            'to_status' => 'assigned',
+            'remarks' => 'Assigned for deletion test.',
+        ]);
+
+        OfficerAssignment::create([
+            'accident_report_id' => $report->id,
+            'officer_id' => $officer->id,
+            'assigned_by' => $admin->id,
+            'status' => 'active',
+        ]);
+
+        SystemNotification::create([
+            'user_id' => $reporter->id,
+            'title' => 'Report update',
+            'message' => 'Your report was assigned.',
+            'type' => 'status_change',
+            'link' => "/reports/{$report->id}",
+        ]);
+
+        Sanctum::actingAs($admin);
+
+        $this->deleteJson("/api/v1/admin/reports/{$report->id}")
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        $this->assertDatabaseMissing('accident_reports', ['id' => $report->id]);
+        $this->assertDatabaseMissing('accident_photos', ['id' => $photo->id]);
+        $this->assertDatabaseMissing('report_status_history', ['accident_report_id' => $report->id]);
+        $this->assertDatabaseMissing('officer_assignments', ['accident_report_id' => $report->id]);
+        $this->assertDatabaseMissing('system_notifications', ['link' => "/reports/{$report->id}"]);
+        Storage::disk('public')->assertMissing($photoPath);
+
+        $audit = AuditLog::where('action', 'delete_report')
+            ->where('target_type', 'AccidentReport')
+            ->where('target_id', $report->id)
+            ->first();
+
+        $this->assertNotNull($audit);
+        $this->assertSame($admin->id, $audit->user_id);
+        $this->assertNotNull($audit->created_at);
+        $this->assertStringContainsString('AR-DELETE-0001', $audit->description);
+
+        // The report disappears from the admin list, dashboard counts and the
+        // assigned officer's verification queue.
+        $adminIds = collect($this->getJson('/api/v1/admin/reports')->json('data.data'))->pluck('id');
+        $this->assertFalse($adminIds->contains($report->id));
+
+        $this->getJson('/api/v1/admin/dashboard/stats')
+            ->assertOk()
+            ->assertJsonPath('data.counts.total', 0);
+
+        $this->app['auth']->forgetGuards();
+        Sanctum::actingAs($officer);
+
+        $queueIds = collect($this->getJson('/api/v1/officer/verification-queue')->json('data.data'))->pluck('id');
+        $this->assertFalse($queueIds->contains($report->id));
+    }
+
+    public function test_permanent_delete_removes_only_the_selected_report(): void
+    {
+        Storage::fake('public');
+        [$admin] = $this->adminToken();
+
+        $deletedReport = $this->seedReport(['report_number' => 'AR-DELETE-0002']);
+        $keptReport = $this->seedReport(['report_number' => 'AR-KEEP-0001']);
+
+        $deletedPath = 'accidents/2026/10/deleted.jpg';
+        $keptPath = 'accidents/2026/10/kept.jpg';
+        Storage::disk('public')->put($deletedPath, 'deleted-photo');
+        Storage::disk('public')->put($keptPath, 'kept-photo');
+
+        AccidentPhoto::create([
+            'accident_report_id' => $deletedReport->id,
+            'file_path' => $deletedPath,
+            'file_name' => 'deleted.jpg',
+            'original_name' => 'deleted.jpg',
+            'file_size' => 13,
+            'mime_type' => 'image/jpeg',
+        ]);
+        $keptPhoto = AccidentPhoto::create([
+            'accident_report_id' => $keptReport->id,
+            'file_path' => $keptPath,
+            'file_name' => 'kept.jpg',
+            'original_name' => 'kept.jpg',
+            'file_size' => 11,
+            'mime_type' => 'image/jpeg',
+        ]);
+
+        Sanctum::actingAs($admin);
+        $this->deleteJson("/api/v1/admin/reports/{$deletedReport->id}")->assertOk();
+
+        $this->assertDatabaseMissing('accident_reports', ['id' => $deletedReport->id]);
+        $this->assertDatabaseHas('accident_reports', ['id' => $keptReport->id]);
+        $this->assertDatabaseHas('accident_photos', ['id' => $keptPhoto->id]);
+        Storage::disk('public')->assertMissing($deletedPath);
+        Storage::disk('public')->assertExists($keptPath);
+    }
+
+    public function test_photo_file_shared_with_another_report_is_not_deleted(): void
+    {
+        Storage::fake('public');
+        [$admin] = $this->adminToken();
+
+        $deletedReport = $this->seedReport(['report_number' => 'AR-DELETE-0003']);
+        $otherReport = $this->seedReport(['report_number' => 'AR-OTHER-0001']);
+
+        $sharedPath = 'accidents/2026/10/shared.jpg';
+        Storage::disk('public')->put($sharedPath, 'shared-photo');
+
+        AccidentPhoto::create([
+            'accident_report_id' => $deletedReport->id,
+            'file_path' => $sharedPath,
+            'file_name' => 'shared.jpg',
+            'original_name' => 'shared.jpg',
+            'file_size' => 11,
+            'mime_type' => 'image/jpeg',
+        ]);
+        $otherPhoto = AccidentPhoto::create([
+            'accident_report_id' => $otherReport->id,
+            'file_path' => $sharedPath,
+            'file_name' => 'shared.jpg',
+            'original_name' => 'shared.jpg',
+            'file_size' => 11,
+            'mime_type' => 'image/jpeg',
+        ]);
+
+        Sanctum::actingAs($admin);
+        $this->deleteJson("/api/v1/admin/reports/{$deletedReport->id}")->assertOk();
+
+        $this->assertDatabaseMissing('accident_reports', ['id' => $deletedReport->id]);
+        $this->assertDatabaseHas('accident_photos', ['id' => $otherPhoto->id]);
+        Storage::disk('public')->assertExists($sharedPath);
+    }
+
+    public function test_only_admins_can_permanently_delete_reports(): void
+    {
+        $report = $this->seedReport(['report_number' => 'AR-DELETE-PROTECTED']);
+
+        foreach (['reporter', 'officer'] as $role) {
+            $this->app['auth']->forgetGuards();
+            $user = User::factory()->create(['role' => $role, 'is_active' => true]);
+            Sanctum::actingAs($user);
+
+            $this->deleteJson("/api/v1/admin/reports/{$report->id}")->assertStatus(403);
+
+            $this->assertDatabaseHas('accident_reports', ['id' => $report->id]);
+            $this->assertDatabaseMissing('audit_logs', [
+                'action' => 'delete_report',
+                'target_id' => $report->id,
+            ]);
+        }
     }
 }

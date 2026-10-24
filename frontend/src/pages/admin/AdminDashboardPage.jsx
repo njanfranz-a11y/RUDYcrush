@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../../services/api';
 import { saveBlobResponse, readDownloadError } from '../../services/download';
 import {
+  AlertCircle,
   Clock,
   Check,
   CheckCircle2,
@@ -9,31 +10,38 @@ import {
   XCircle,
   Users,
   FileDown,
-  FileText
+  FileText,
+  RefreshCw
 } from 'lucide-react';
 
 export default function AdminDashboardPage({ onNavigate, onSelectReport }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [statsError, setStatsError] = useState('');
   const [exporting, setExporting] = useState(null); // 'csv' | 'pdf' | null
   const [exportError, setExportError] = useState('');
 
-  useEffect(() => {
-    const fetchStats = () => {
-      api.admin.getStats()
-        .then((res) => {
-          if (res.data?.success) {
-            setStats(res.data.data);
-          }
-        })
-        .catch((err) => console.log('Admin stats error:', err.message))
-        .finally(() => setLoading(false));
-    };
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await api.admin.getStats();
+      if (res.data?.success) {
+        setStats(res.data.data);
+        setStatsError('');
+      } else {
+        setStatsError('Unable to load dashboard metrics.');
+      }
+    } catch (err) {
+      setStatsError(err.friendlyMessage || err.message || 'Unable to load dashboard metrics.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
+  useEffect(() => {
     fetchStats();
     const timer = setInterval(fetchStats, 15000);
     return () => clearInterval(timer);
-  }, []);
+  }, [fetchStats]);
 
   const handleExport = async (kind) => {
     setExporting(kind);
@@ -81,6 +89,21 @@ export default function AdminDashboardPage({ onNavigate, onSelectReport }) {
     );
   }
 
+  if (statsError && !stats) {
+    return (
+      <div className="dashboard-container" style={{ padding: '80px 20px', textAlign: 'center' }}>
+        <AlertCircle size={32} color="#dc2626" style={{ margin: '0 auto 12px auto', display: 'block' }} />
+        <div style={{ fontWeight: 700, color: 'var(--ink)', marginBottom: '6px' }}>
+          Unable to load dashboard metrics
+        </div>
+        <p style={{ color: 'var(--ink-soft)', fontSize: '13px', margin: '0 0 16px' }}>{statsError}</p>
+        <button type="button" className="btn btn--primary btn--sm" onClick={fetchStats}>
+          <RefreshCw size={14} style={{ marginRight: 6 }} /> Try again
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="dashboard-container">
       {/* Reference Panel Header */}
@@ -105,6 +128,29 @@ export default function AdminDashboardPage({ onNavigate, onSelectReport }) {
           </button>
         </div>
       </div>
+
+      {statsError && (
+        <div
+          role="alert"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            margin: '0 0 20px',
+            padding: '10px 14px',
+            borderRadius: '8px',
+            background: '#fee2e2',
+            color: '#991b1b',
+            fontSize: '0.85rem',
+          }}
+        >
+          <AlertCircle size={16} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1 }}>{statsError}</span>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={fetchStats} style={{ color: '#991b1b' }}>
+            Retry
+          </button>
+        </div>
+      )}
 
       {exportError && (
         <div
@@ -208,7 +254,9 @@ export default function AdminDashboardPage({ onNavigate, onSelectReport }) {
               ) : (
                 byType.map((item, idx) => {
                   const count = Number(item.count) || 0;
-                  const percentage = Math.max(Math.round((count / maxTypeCount) * 100), 10);
+                  const percentage = maxTypeCount > 0
+                    ? Math.round((count / maxTypeCount) * 1000) / 10
+                    : 0;
                   return (
                     <div key={idx} className="admin-bar">
                       <div>
@@ -241,7 +289,9 @@ export default function AdminDashboardPage({ onNavigate, onSelectReport }) {
               ) : (
                 bySeverity.map((item, idx) => {
                   const count = Number(item.count) || 0;
-                  const percentage = Math.max(Math.round((count / maxSeverityCount) * 100), 10);
+                  const percentage = maxSeverityCount > 0
+                    ? Math.round((count / maxSeverityCount) * 1000) / 10
+                    : 0;
                   const barColor = getSeverityColor(item.injury_severity);
                   return (
                     <div key={idx} className="admin-bar">

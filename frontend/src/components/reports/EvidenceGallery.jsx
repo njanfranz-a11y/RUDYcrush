@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Image, X, ZoomIn, AlertCircle } from 'lucide-react';
 import { getPhotoUrl, getPhotoFallbackUrl } from '../../services/api';
 
@@ -6,6 +6,18 @@ export default function EvidenceGallery({ photos = [] }) {
   const [activePhoto, setActivePhoto] = useState(null);
   const [triedFallback, setTriedFallback] = useState({});
   const [failedPhotos, setFailedPhotos] = useState({});
+
+  // Escape closes the photo lightbox before the parent report modal.
+  useEffect(() => {
+    if (!activePhoto) return undefined;
+
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setActivePhoto(null);
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [activePhoto]);
 
   if (!photos || photos.length === 0) {
     return (

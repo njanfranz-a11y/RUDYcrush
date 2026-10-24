@@ -173,7 +173,16 @@ export default function OfficerReportsPage({ onSelectReport, onNavigate }) {
                           <Eye size={12} style={{ marginRight: 5 }} /> Details
                         </button>
 
-                        {report.status !== 'closed' && (
+                        {report.status === 'assigned' && (
+                          <button
+                            className="officer-update"
+                            onClick={() => onNavigate('officer-verification')}
+                          >
+                            Verify
+                          </button>
+                        )}
+
+                        {['verified', 'in_progress'].includes(report.status) && (
                           <button
                             className="officer-update"
                             onClick={() => setActiveReport(report)}
