@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
-import { api } from '../../services/api';
+import { api, APK_DOWNLOAD_URL } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import RoadWatchWordmark from '../../components/common/RoadWatchWordmark';
 import opsCenterImg from '../../assets/operations_center.jpg';
@@ -331,13 +331,15 @@ export default function LandingPage({ onNavigate }) {
             >
               {user ? 'Dashboard' : 'Sign in'}
             </button>
-            <button
-              type="button"
+            <a
               className="btn btn--primary btn--sm"
-              onClick={() => onNavigate('report-incident')}
+              href={APK_DOWNLOAD_URL}
+              download
+              rel="noopener"
+              aria-label="Download the RoadWatch Bulacan Android app"
             >
-              Report an incident
-            </button>
+              Download APK
+            </a>
             <button
               type="button"
               className={`burger ${mobileMenuOpen ? 'active' : ''}`}
@@ -365,13 +367,16 @@ export default function LandingPage({ onNavigate }) {
               >
                 {user ? 'Command dashboard' : 'Sign in'}
               </button>
-              <button
-                type="button"
+              <a
                 className="btn btn--primary btn--sm"
-                onClick={() => { setMobileMenuOpen(false); onNavigate('report-incident'); }}
+                href={APK_DOWNLOAD_URL}
+                download
+                rel="noopener"
+                aria-label="Download the RoadWatch Bulacan Android app"
+                onClick={() => setMobileMenuOpen(false)}
               >
-                Report an incident
-              </button>
+                Download APK
+              </a>
             </div>
           </div>
         )}
@@ -786,13 +791,18 @@ export default function LandingPage({ onNavigate }) {
             <p>No forms, no hotline queues. Pin it, snap it, send it.</p>
           </div>
           <div style={{ display: 'flex', gap: '0.8rem', flexWrap: 'wrap' }}>
-            <button
-              type="button"
+            <a
               className="btn btn--primary"
-              onClick={() => onNavigate('report-incident')}
+              href={APK_DOWNLOAD_URL}
+              download
+              rel="noopener"
+              aria-label="Download the RoadWatch Bulacan Android app"
             >
-              Report an incident &rarr;
-            </button>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 3v12m0 0 5-5m-5 5-5-5M5 21h14" />
+              </svg>
+              Download APK
+            </a>
             <button
               type="button"
               className="btn btn--ghost-light"

@@ -1,3 +1,11 @@
+# Android packages are served as downloads from /downloads/.
+AddType application/vnd.android.package-archive .apk
+<FilesMatch "\.apk$">
+    Header set Content-Disposition "attachment"
+    Header set X-Content-Type-Options "nosniff"
+    Header set Cache-Control "public, no-cache"
+</FilesMatch>
+
 <IfModule mod_rewrite.c>
     <IfModule mod_negotiation.c>
         Options -MultiViews -Indexes +FollowSymLinks

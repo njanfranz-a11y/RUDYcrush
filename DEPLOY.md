@@ -107,6 +107,23 @@ re-create deleted accounts/reports.
 
 > Change the demo admin password after your first login if the site is public.
 
+### 1e. Host the Android APK
+
+The web landing page downloads the current APK from the backend at:
+
+```text
+https://<your-service>.up.railway.app/downloads/RoadWatch-Bulacan.apk
+```
+
+Copy the built `Mobile app/RoadWatch-Bulacan.apk` to
+`backend/public/downloads/RoadWatch-Bulacan.apk`, then deploy the backend as
+usual (`cd backend && railway up --ci`). The APK is intentionally excluded from
+git because release binaries are large; the Railway image keeps the copy.
+
+The download button derives its URL from the frontend's configured API origin,
+so `VITE_API_BASE_URL` must be set for the Pages build (see 2a). Apache adds the
+Android MIME type and an attachment header via `backend/public/.htaccess`.
+
 ---
 
 ## 2. Frontend on Cloudflare Pages

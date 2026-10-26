@@ -70,6 +70,10 @@ export const API_BASE_URL = resolveApiBaseUrl();
 
 const backendBaseUrl = API_BASE_URL.replace(/\/api\/v1\/?$/, '');
 
+// The APK is served by the Laravel/Railway backend at this stable path. Using
+// the configured API origin keeps local development and production in sync.
+export const APK_DOWNLOAD_URL = `${backendBaseUrl}/downloads/RoadWatch-Bulacan.apk`;
+
 export const getPhotoUrl = (photo) => {
   if (!photo) return '';
 
