@@ -3726,6 +3726,8 @@ a.logo:hover, .logo:hover {
 }
 @media (max-width: 820px) {
   .nav-links, .lang-chip { display: none; }
+  /* The drawer carries the APK action so the compact header never overflows. */
+  .nav-right > .btn--primary { display: none; }
   .burger { display: flex; }
 }
 
