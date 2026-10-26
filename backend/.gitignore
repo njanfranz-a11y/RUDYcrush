@@ -16,9 +16,6 @@
 /public/build
 /public/hot
 /public/storage
-# Large Android binaries are uploaded with `railway up` and served from
-# public/downloads; keep version history out of git.
-/public/downloads/*.apk
 /storage/*.key
 /storage/pail
 /vendor

@@ -117,8 +117,12 @@ https://<your-service>.up.railway.app/downloads/RoadWatch-Bulacan.apk
 
 Copy the built `Mobile app/RoadWatch-Bulacan.apk` to
 `backend/public/downloads/RoadWatch-Bulacan.apk`, then deploy the backend as
-usual (`cd backend && railway up --ci`). The APK is intentionally excluded from
-git because release binaries are large; the Railway image keeps the copy.
+usual (`cd backend && railway up --ci`). `railway up` bundles the file into the
+image, so it stays available after the container restarts.
+
+If you switch the backend to GitHub auto-deploy, either commit the APK or host
+it on external object storage (for example Cloudflare R2) and update the URL;
+otherwise a GitHub build will not include the binary.
 
 The download button derives its URL from the frontend's configured API origin,
 so `VITE_API_BASE_URL` must be set for the Pages build (see 2a). Apache adds the
